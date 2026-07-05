@@ -44,6 +44,7 @@ async function loadProto() {
         getResourcePath('proto', 'interactpb.proto'),
         getResourcePath('proto', 'dogpb.proto'),
         getResourcePath('proto', 'activitypb.proto'),
+        getResourcePath('proto', 'mysteryshoppb.proto'),
     ], { keepCase: true });
 
     // 网关
@@ -120,6 +121,12 @@ async function loadProto() {
     types.MallGoods = root.lookupType('gamepb.mallpb.MallGoods');
     types.PurchaseRequest = root.lookupType('gamepb.mallpb.PurchaseRequest');
     types.PurchaseResponse = root.lookupType('gamepb.mallpb.PurchaseResponse');
+    types.GetActiveMysteryNPCRequest = root.lookupType('gamepb.mysteryshoppb.GetActiveNPCRequest');
+    types.GetActiveMysteryNPCReply = root.lookupType('gamepb.mysteryshoppb.GetActiveNPCReply');
+    types.BuyMysteryShopRequest = root.lookupType('gamepb.mysteryshoppb.BuyRequest');
+    types.BuyMysteryShopReply = root.lookupType('gamepb.mysteryshoppb.BuyReply');
+    types.AbandonMysteryShopRequest = root.lookupType('gamepb.mysteryshoppb.AbandonRequest');
+    types.AbandonMysteryShopReply = root.lookupType('gamepb.mysteryshoppb.AbandonReply');
     types.GetDailyGiftStatusRequest = root.lookupType('gamepb.qqvippb.GetDailyGiftStatusRequest');
     types.GetDailyGiftStatusReply = root.lookupType('gamepb.qqvippb.GetDailyGiftStatusReply');
     types.ClaimDailyGiftRequest = root.lookupType('gamepb.qqvippb.ClaimDailyGiftRequest');

@@ -43,8 +43,9 @@ export function useStrategySettings({
   const strategySaving = ref(false)
 
   const localStrategySettings = ref({
-    plantingStrategy: 'max_exp',
+    plantingStrategy: 'bag_priority',
     preferredSeedId: 0,
+    prioritize2x2Crops: true,
     bagSeedPriority: [] as number[],
     bagSeedFallbackStrategy: 'level',
     stealDelaySeconds: 0,
@@ -115,7 +116,7 @@ export function useStrategySettings({
       if (requestId !== bagSeedsRequestId || String(currentAccountId.value || '') !== requestedId)
         return
       if (res.data.ok) {
-        bagSeeds.value = (res.data.data || []).filter((s: BagSeedItem) => s.plantSize === 1)
+        bagSeeds.value = res.data.data || []
         if (!localStrategySettings.value.bagSeedPriority || localStrategySettings.value.bagSeedPriority.length === 0)
           localStrategySettings.value.bagSeedPriority = bagSeeds.value.map(seed => Number(seed.seedId)).filter(seedId => seedId > 0)
       }
@@ -284,6 +285,7 @@ export function useStrategySettings({
       localStrategySettings.value = JSON.parse(JSON.stringify({
         plantingStrategy: settings.value.plantingStrategy,
         preferredSeedId: settings.value.preferredSeedId,
+        prioritize2x2Crops: settings.value.prioritize2x2Crops === true,
         bagSeedPriority: settings.value.bagSeedPriority ?? [],
         bagSeedFallbackStrategy: settings.value.bagSeedFallbackStrategy ?? 'level',
         stealDelaySeconds: settings.value.stealDelaySeconds ?? 0,

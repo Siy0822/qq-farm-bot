@@ -484,6 +484,20 @@ function createWorkerManager(deps) {
                 accountId, wrk.name, { reason });
 
             stopWorker(accountId);
+        } else if (msg.type === 'automation_patch') {
+            const patch = msg.patch && typeof msg.patch === 'object' ? msg.patch : {};
+            if ((patch.automation && typeof patch.automation === 'object')
+                || patch.friendBadRetryDate !== undefined) {
+                const store = require('../models/store');
+                store.applyConfigSnapshot(patch, { accountId });
+                const currentWrk = workers[accountId];
+                if (currentWrk && currentWrk.process) {
+                    currentWrk.process.send({
+                        type: 'config_sync',
+                        config: buildConfigSnapshotForAccount(accountId)
+                    });
+                }
+            }
         } else if (msg.type === 'api_response') {
             // API 响应
             const { id, result, error } = msg;

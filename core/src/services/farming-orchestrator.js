@@ -1,7 +1,7 @@
 const { CONFIG } = require('../config/config');
 const { getUserState, isConnected, networkEvents } = require('../utils/network');
 const { toNum, log, logWarn, randomDelay } = require('../utils/utils');
-const { isAutomationOn, getAutomation } = require('../models/store');
+const { isAutomationOn, getAutomation, getPrioritize2x2Crops } = require('../models/store');
 const { recordOperation } = require('./stats');
 const { createScheduler } = require('./scheduler');
 const { getAllLands, harvest, farming, unlockLand, upgradeLand } = require('./farm-api');
@@ -17,6 +17,7 @@ let isFirstFarmCheck = true;
 let farmLoopRunning = false;
 let externalSchedulerMode = false;
 let lastPushTime = 0;
+let shouldRefresh2x2Plan = true;
 
 const farmScheduler = createScheduler('farm');
 
@@ -145,19 +146,27 @@ async function runFarmOperation(opType) {
       deadLands = [...new Set([...deadLands, ...removeResult.removable])];
     }
 
-    if (deadLands.length > 0 || emptyLands.length > 0) {
+    const shouldRefresh2x2 = shouldRefresh2x2Plan && getPrioritize2x2Crops();
+    if (deadLands.length > 0 || emptyLands.length > 0 || shouldRefresh2x2) {
       try {
         const totalLands = deadLands.length + emptyLands.length;
-        await autoPlantEmptyLands(deadLands, emptyLands);
-        actions.push(`种植${  totalLands}`);
-        recordOperation('plant', totalLands);
-      } catch (err) { logWarn('种植', err.message); }
+        await autoPlantEmptyLands(deadLands, emptyLands, lands);
+        if (totalLands > 0) {
+          actions.push(`种植${  totalLands}`);
+          recordOperation('plant', totalLands);
+        }
+      } catch (err) {
+        logWarn('种植', err.message);
+      } finally {
+        shouldRefresh2x2Plan = false;
+      }
     }
   }
 
   // ── 多季作物补肥 ──
   if (opType === 'all' && removeResult && Array.isArray(removeResult.growing) &&
-      removeResult.growing.length > 0 && isAutomationOn('fertilizer_multi_season')) {
+      removeResult.growing.length > 0 && isAutomationOn('fertilizer_multi_season') &&
+      (getAutomation().fertilizer || 'none') !== 'final_normal') {
     const multiSeasonLands = [...new Set(
       removeResult.growing.map(id => toNum(id)).filter(Boolean)
     )];
@@ -227,7 +236,8 @@ async function runFarmOperation(opType) {
   // ── 智能施肥（巡田时触发）──
   if (opType === 'all') {
     const fertilizerMode = getAutomation().fertilizer || 'none';
-    if (fertilizerMode === 'smart' || fertilizerMode === 'smart_only' || fertilizerMode === 'smart_normal') {
+    if (fertilizerMode === 'smart' || fertilizerMode === 'smart_only' || fertilizerMode === 'smart_normal' ||
+        fertilizerMode === 'final_normal' || fertilizerMode === 'final_organic') {
       try {
         const fertResult = await runFertilizerByConfig([], { skipNormal: true });
         if (fertResult.organic > 0) actions.push(`有机肥${  fertResult.organic}`);
@@ -266,6 +276,7 @@ function startFarmCheckLoop(options = {}) {
   if (farmLoopRunning) return;
   externalSchedulerMode = !!options.externalScheduler;
   farmLoopRunning = true;
+  shouldRefresh2x2Plan = true;
   networkEvents.on('landsChanged', onLandsChangedPush);
   if (!externalSchedulerMode) scheduleNextFarmCheck(1000); // 1 秒后首次检查
   startFertilizerBuyCheckTimer();
@@ -274,6 +285,7 @@ function startFarmCheckLoop(options = {}) {
 /** 收到地块变化推送时的响应 */
 function onLandsChangedPush(lands) {
   if (!isAutomationOn('farm_push')) return;
+  shouldRefresh2x2Plan = true;
   if (isCheckingFarm) return;
   const now = Date.now();
   if (now - lastPushTime < 500) return; // 500ms 去抖
@@ -296,6 +308,7 @@ function stopFarmCheckLoop() {
 
 function refreshFarmCheckLoop(delayMs = 0) {
   if (!farmLoopRunning) return;
+  shouldRefresh2x2Plan = true;
   scheduleNextFarmCheck(delayMs);
 }
 

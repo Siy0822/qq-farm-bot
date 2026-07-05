@@ -10,6 +10,7 @@ import { useAccountStore } from '@/stores/account'
 import { useBagStore } from '@/stores/bag'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
+import { formatCouponAmount, formatGoldAmount, formatGoldBeanAmount } from '@/utils/number-format'
 
 const statusStore = useStatusStore()
 const accountStore = useAccountStore()
@@ -507,14 +508,14 @@ useIntervalFn(updateCountdowns, 1000)
               金币
             </div>
             <div class="text-2xl text-yellow-600 font-bold dark:text-yellow-500">
-              {{ status?.status?.gold || 0 }}
+              {{ formatGoldAmount(status?.status?.gold || 0) }}
             </div>
             <div
               v-if="(status?.sessionGoldGained || 0) !== 0"
               class="text-[10px]"
               :class="(status?.sessionGoldGained || 0) > 0 ? 'text-green-500' : 'text-red-500'"
             >
-              {{ (status?.sessionGoldGained || 0) > 0 ? '+' : '' }}{{ status?.sessionGoldGained || 0 }}
+              {{ (status?.sessionGoldGained || 0) > 0 ? '+' : '' }}{{ formatGoldAmount(status?.sessionGoldGained || 0) }}
             </div>
           </div>
           <div class="text-right">
@@ -523,14 +524,14 @@ useIntervalFn(updateCountdowns, 1000)
               点券
             </div>
             <div class="text-2xl text-emerald-500 font-bold dark:text-emerald-400">
-              {{ status?.status?.coupon || 0 }}
+              {{ formatCouponAmount(status?.status?.coupon || 0) }}
             </div>
             <div
               v-if="(status?.sessionCouponGained || 0) !== 0"
               class="text-[10px]"
               :class="(status?.sessionCouponGained || 0) > 0 ? 'text-green-500' : 'text-red-500'"
             >
-              {{ (status?.sessionCouponGained || 0) > 0 ? '+' : '' }}{{ status?.sessionCouponGained || 0 }}
+              {{ (status?.sessionCouponGained || 0) > 0 ? '+' : '' }}{{ formatCouponAmount(status?.sessionCouponGained || 0) }}
             </div>
           </div>
           <div class="text-right">
@@ -539,7 +540,7 @@ useIntervalFn(updateCountdowns, 1000)
               金豆
             </div>
             <div class="text-2xl text-amber-500 font-bold dark:text-amber-400">
-              {{ status?.status?.goldBean || 0 }}
+              {{ formatGoldBeanAmount(status?.status?.goldBean || 0) }}
             </div>
           </div>
         </div>

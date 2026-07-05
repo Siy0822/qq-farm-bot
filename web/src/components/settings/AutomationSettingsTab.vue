@@ -56,7 +56,7 @@ const emit = defineEmits<{
 const settings = defineModel<AutomationSettings>('settings', { required: true })
 const autoCodeRefresh = defineModel<AutoCodeRefreshConfig>('autoCodeRefresh', { required: true })
 
-function isSmartFertilizerMode(mode: string) {
+function isFastMatureFertilizerMode(mode: string) {
   return mode === 'smart' || mode === 'smart_only' || mode === 'smart_normal'
 }
 </script>
@@ -259,7 +259,7 @@ function isSmartFertilizerMode(mode: string) {
           />
         </div>
 
-        <div v-if="isSmartFertilizerMode(settings.automation.fertilizer)" class="rounded bg-amber-50 p-3 text-sm dark:bg-amber-900/20">
+        <div v-if="isFastMatureFertilizerMode(settings.automation.fertilizer)" class="rounded bg-amber-50 p-3 text-sm dark:bg-amber-900/20">
           <div class="mb-2 text-sm text-gray-900 font-medium dark:text-gray-100">
             快成熟判定秒数
           </div>

@@ -248,8 +248,10 @@ const DEFAULT_ACCOUNT_CONFIG = {
         enabled: false,
         intervalMinutes: 60
     },
-    plantingStrategy: 'max_exp',
+    plantingStrategy: 'bag_priority',
     preferredSeedId: 0,
+    prioritize2x2Crops: true,
+    friendBadRetryDate: '',
     intervals: DEFAULT_INTERVALS,
     friendQuietHours: DEFAULT_QUIET_HOURS,
     knownFriendGids: [],
@@ -450,6 +452,7 @@ function cloneAccountConfig(config = DEFAULT_ACCOUNT_CONFIG) {
         plantingStrategy: ALLOWED_PLANTING_STRATEGIES.includes(String(config.plantingStrategy || ''))
             ? String(config.plantingStrategy) : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
         preferredSeedId: Math.max(0, Number.parseInt(config.preferredSeedId, 10) || 0),
+        prioritize2x2Crops: config.prioritize2x2Crops !== false,
         plantBlacklist: plantBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
         stealDelaySeconds: Math.max(0, Math.min(60, Number(config.stealDelaySeconds) || 1)),
         plantOrderRandom: !!config.plantOrderRandom,
@@ -510,7 +513,7 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
             if (!ALLOWED_AUTOMATION_KEYS.has(key)) continue;
 
             if (key === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'smart', 'smart_only', 'smart_normal', 'none'];
+                const allowed = ['both', 'normal', 'organic', 'smart', 'smart_only', 'smart_normal', 'final_normal', 'final_organic', 'none'];
                 cfg.automation[key] = allowed.includes(value) ? value : cfg.automation[key];
             } else if (key === 'fertilizer_land_types') {
                 cfg.automation[key] = normalizeFertilizerLandTypes(value, cfg.automation[key]);
@@ -539,6 +542,11 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
     if (input.preferredSeedId !== undefined && input.preferredSeedId !== null) {
         cfg.preferredSeedId = Math.max(0, Number.parseInt(input.preferredSeedId, 10) || 0);
     }
+    if (input.prioritize2x2Crops !== undefined && input.prioritize2x2Crops !== null) {
+        cfg.prioritize2x2Crops = input.prioritize2x2Crops === true;
+    }
+    cfg.friendBadRetryDate = /^\d{4}-\d{2}-\d{2}$/.test(String(input.friendBadRetryDate || ''))
+        ? String(input.friendBadRetryDate) : '';
 
     // 间隔配置
     if (input.intervals && typeof input.intervals === 'object') {
@@ -905,6 +913,8 @@ function getConfigSnapshot(accountId) {
         autoCodeRefresh: { ...cfg.autoCodeRefresh },
         plantingStrategy: cfg.plantingStrategy,
         preferredSeedId: cfg.preferredSeedId,
+        prioritize2x2Crops: cfg.prioritize2x2Crops === true,
+        friendBadRetryDate: String(cfg.friendBadRetryDate || ''),
         intervals: { ...cfg.intervals },
         friendQuietHours: { ...cfg.friendQuietHours },
         knownFriendGids: [...cfg.knownFriendGids || []],
@@ -932,7 +942,7 @@ function applyConfigSnapshot(patch = {}, opts = {}) {
         for (const [key, value] of Object.entries(patch.automation)) {
             if (cfg.automation[key] === undefined) continue;
             if (key === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'smart', 'smart_only', 'smart_normal', 'none'];
+                const allowed = ['both', 'normal', 'organic', 'smart', 'smart_only', 'smart_normal', 'final_normal', 'final_organic', 'none'];
                 cfg.automation[key] = allowed.includes(value) ? value : cfg.automation[key];
             } else if (key === 'fertilizer_land_types') {
                 cfg.automation[key] = normalizeFertilizerLandTypes(value, cfg.automation[key]);
@@ -956,6 +966,13 @@ function applyConfigSnapshot(patch = {}, opts = {}) {
     }
     if (patch.preferredSeedId !== undefined && patch.preferredSeedId !== null) {
         cfg.preferredSeedId = Math.max(0, Number.parseInt(patch.preferredSeedId, 10) || 0);
+    }
+    if (patch.prioritize2x2Crops !== undefined && patch.prioritize2x2Crops !== null) {
+        cfg.prioritize2x2Crops = patch.prioritize2x2Crops === true;
+    }
+    if (patch.friendBadRetryDate !== undefined && patch.friendBadRetryDate !== null) {
+        const retryDate = String(patch.friendBadRetryDate || '');
+        cfg.friendBadRetryDate = /^\d{4}-\d{2}-\d{2}$/.test(retryDate) ? retryDate : '';
     }
     if (patch.intervals && typeof patch.intervals === 'object') {
         for (const [key, val] of Object.entries(patch.intervals)) {
@@ -1061,6 +1078,14 @@ function getPreferredSeed(accountId) {
 
 function getPlantingStrategy(accountId) {
     return getAccountConfigSnapshot(accountId).plantingStrategy;
+}
+
+function getPrioritize2x2Crops(accountId) {
+    return getAccountConfigSnapshot(accountId).prioritize2x2Crops === true;
+}
+
+function getFriendBadRetryDate(accountId) {
+    return String(getAccountConfigSnapshot(accountId).friendBadRetryDate || '');
 }
 
 function getBagSeedPriority(accountId) {
@@ -1575,6 +1600,8 @@ module.exports = {
     isAutomationOn,
     getPreferredSeed,
     getPlantingStrategy,
+    getPrioritize2x2Crops,
+    getFriendBadRetryDate,
     getBagSeedPriority,
     getBagSeedFallbackStrategy,
     getIntervals,

@@ -31,7 +31,7 @@ const emit = defineEmits<{
           背包种子优先顺序
         </div>
         <p class="mt-1 text-xs text-amber-700/90 dark:text-amber-300/90">
-          先按下方顺序消耗背包中的 1x1 种子；背包种子不足时，再按"第二优先策略"补种。
+          先按下方顺序消耗背包种子；开启 2×2 优先时，四格种子会先用于预留区域，其余空地再按第二优先策略补种。
         </p>
       </div>
       <button
@@ -49,7 +49,7 @@ const emit = defineEmits<{
       {{ error }}
     </div>
     <div v-else-if="seeds.length === 0" class="py-4 text-center text-sm text-amber-700 dark:text-amber-300">
-      背包中暂无 1x1 种子
+      背包中暂无种子
     </div>
     <div v-else class="grid gap-2 lg:grid-cols-3 sm:grid-cols-2">
       <div
@@ -67,6 +67,7 @@ const emit = defineEmits<{
         <div class="min-w-0 flex-1">
           <div class="truncate text-sm text-gray-800 font-medium dark:text-gray-200">
             {{ seed.name }}
+            <span v-if="seed.plantSize === 2" class="ml-1 text-xs text-emerald-600 dark:text-emerald-400">2×2</span>
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400">
             数量: {{ seed.count }} | 等级: {{ seed.requiredLevel }}

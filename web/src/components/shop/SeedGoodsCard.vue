@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import BaseButton from '@/components/ui/BaseButton.vue'
+import { formatGoldAmount } from '@/utils/number-format'
 
 defineProps<{
   item: any
@@ -44,7 +45,7 @@ const L = {
         {{ item.name }}
       </div>
       <div class="mt-1 text-center text-xs text-amber-600 font-semibold dark:text-amber-400">
-        {{ L.price }} {{ item.price.toLocaleString() }} {{ L.gold }}
+        {{ L.price }} {{ formatGoldAmount(item.price) }} {{ L.gold }}
       </div>
       <div class="mt-2 text-[11px] text-gray-500 leading-5 dark:text-gray-400">
         <div>{{ L.requiredLevel }} {{ item.requiredLevel }}</div>

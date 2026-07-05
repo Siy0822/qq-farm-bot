@@ -77,6 +77,7 @@ export interface AutoCodeRefreshConfig {
 export interface SettingsState {
   plantingStrategy: string
   preferredSeedId: number
+  prioritize2x2Crops: boolean
   bagSeedPriority: number[]
   bagSeedFallbackStrategy: string
   autoAcceptFriendMinLevel: number
@@ -131,8 +132,9 @@ function normalizeOfflineReminder(input: Partial<OfflineConfig> | null | undefin
 
 export const useSettingStore = defineStore('setting', () => {
   const settings = ref<SettingsState>({
-    plantingStrategy: 'max_exp',
+    plantingStrategy: 'bag_priority',
     preferredSeedId: 0,
+    prioritize2x2Crops: true,
     bagSeedPriority: [],
     bagSeedFallbackStrategy: 'level',
     autoAcceptFriendMinLevel: 0,
@@ -162,8 +164,9 @@ export const useSettingStore = defineStore('setting', () => {
 
   function clearSettingsState() {
     settings.value = {
-      plantingStrategy: 'max_exp',
+      plantingStrategy: 'bag_priority',
       preferredSeedId: 0,
+      prioritize2x2Crops: true,
       bagSeedPriority: [],
       bagSeedFallbackStrategy: 'level',
       autoAcceptFriendMinLevel: 0,
@@ -199,8 +202,9 @@ export const useSettingStore = defineStore('setting', () => {
         return
       if (data && data.ok && data.data) {
         const d = data.data
-        settings.value.plantingStrategy = d.plantingStrategy || d.strategy || 'max_exp'
+        settings.value.plantingStrategy = d.plantingStrategy || d.strategy || 'bag_priority'
         settings.value.preferredSeedId = d.preferredSeedId || d.preferredSeed || 0
+        settings.value.prioritize2x2Crops = d.prioritize2x2Crops === true
         settings.value.intervals = d.intervals || {}
         settings.value.friendQuietHours = d.friendQuietHours || { enabled: false, start: '23:00', end: '07:00' }
         settings.value.automation = d.automation || {}
@@ -237,6 +241,7 @@ export const useSettingStore = defineStore('setting', () => {
       const settingsPayload = {
         plantingStrategy: newSettings.plantingStrategy,
         preferredSeedId: newSettings.preferredSeedId,
+        prioritize2x2Crops: newSettings.prioritize2x2Crops === true,
         bagSeedPriority: newSettings.bagSeedPriority ?? [],
         bagSeedFallbackStrategy: newSettings.bagSeedFallbackStrategy ?? 'level',
         autoAcceptFriendMinLevel: newSettings.autoAcceptFriendMinLevel ?? 0,

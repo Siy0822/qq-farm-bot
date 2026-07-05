@@ -73,6 +73,8 @@ export function useAutomationSettings({
     { label: '普通 + 快成熟有机', value: 'smart' },
     { label: '快成熟有机', value: 'smart_only' },
     { label: '快成熟普通', value: 'smart_normal' },
+    { label: '最终阶段普通肥', value: 'final_normal' },
+    { label: '最终阶段有机肥', value: 'final_organic' },
     { label: '仅普通化肥', value: 'normal' },
     { label: '仅有机化肥', value: 'organic' },
     { label: '不施肥', value: 'none' },

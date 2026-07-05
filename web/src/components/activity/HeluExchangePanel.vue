@@ -2,6 +2,7 @@
 import type { ActivityLabels, ExchangeItem, ExchangeState } from './types'
 import { ref } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import { formatCurrencyAmountByLabel } from '@/utils/number-format'
 
 const props = defineProps<{
   items: ExchangeItem[]
@@ -16,8 +17,8 @@ const emit = defineEmits<{
 
 const imageErrors = ref<Record<string | number, boolean>>({})
 
-function formatNumber(value?: number) {
-  return Number(value || 0).toLocaleString()
+function formatPrice(item: ExchangeItem) {
+  return formatCurrencyAmountByLabel(item.price, getCurrencyLabel(item))
 }
 
 function itemImage(item: { image?: string }) {
@@ -110,7 +111,7 @@ function getCurrencyLabel(item: ExchangeItem) {
           </div>
 
           <div class="mt-2 text-center text-xs text-amber-600 font-semibold dark:text-amber-400">
-            {{ formatNumber(item.price) }} {{ getCurrencyLabel(item) }}
+            {{ formatPrice(item) }} {{ getCurrencyLabel(item) }}
           </div>
 
           <div class="mt-auto pt-3">

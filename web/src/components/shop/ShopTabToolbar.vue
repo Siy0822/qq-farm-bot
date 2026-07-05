@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import BaseButton from '@/components/ui/BaseButton.vue'
 
-type ShopTab = 'seed' | 'pet' | 'decoration' | 'mall'
+type ShopTab = 'seed' | 'pet' | 'decoration' | 'mall' | 'mystery'
 
 defineProps<{
   tab: ShopTab
@@ -21,6 +21,7 @@ const L = {
   pet: '\u5BA0\u7269\u5546\u5E97',
   decoration: '\u88C5\u626E\u5546\u5E97',
   mall: '\u9053\u5177\u5546\u5E97',
+  mystery: '\u795E\u79D8\u5546\u4EBA',
   asc: '\u7B49\u7EA7\u5347\u5E8F',
   desc: '\u7B49\u7EA7\u964D\u5E8F',
   sort: '\u6392\u5E8F',
@@ -32,6 +33,7 @@ const tabs: Array<{ value: ShopTab, label: string }> = [
   { value: 'pet', label: L.pet },
   { value: 'decoration', label: L.decoration },
   { value: 'mall', label: L.mall },
+  { value: 'mystery', label: L.mystery },
 ]
 
 function tabClasses(active: boolean) {

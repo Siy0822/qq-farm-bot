@@ -3,6 +3,7 @@ import BagSeedPriorityPanel from '@/components/settings/BagSeedPriorityPanel.vue
 import StrategyTimingPanel from '@/components/settings/StrategyTimingPanel.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
+import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 
 interface SelectOption<T = string | number> {
   label: string
@@ -21,6 +22,7 @@ interface BagSeedItem {
 interface StrategySettings {
   plantingStrategy: string
   preferredSeedId: number
+  prioritize2x2Crops: boolean
   bagSeedPriority: number[]
   bagSeedFallbackStrategy: string
   stealDelaySeconds: number
@@ -120,6 +122,16 @@ const settings = defineModel<StrategySettings>('settings', { required: true })
             <div class="i-carbon-chevron-down shrink-0 text-lg text-gray-400" />
           </div>
         </div>
+      </div>
+
+      <div class="border border-emerald-200 rounded-lg bg-emerald-50/70 p-3 dark:border-emerald-800/50 dark:bg-emerald-900/20">
+        <BaseSwitch
+          v-model="settings.prioritize2x2Crops"
+          label="优先种植 2×2 作物"
+        />
+        <p class="mt-2 text-xs text-emerald-700/90 leading-5 dark:text-emerald-300/90">
+          开启后会根据背包中的四格种子预留完整 2×2 区域；预留区收获后暂不补种普通作物，四块全部空闲时自动种植。四格种子不会从商城购买。
+        </p>
       </div>
 
       <div v-if="settings.plantingStrategy === 'bag_priority'" class="space-y-3">

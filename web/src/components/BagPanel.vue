@@ -7,6 +7,7 @@ import { useAccountStore } from '@/stores/account'
 import { useBagStore } from '@/stores/bag'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
+import { formatCurrencyAmountByLabel, formatGoldAmount, formatGoldBeanAmount } from '@/utils/number-format'
 
 const accountStore = useAccountStore()
 const bagStore = useBagStore()
@@ -118,7 +119,7 @@ function handleSellClick(item: any) {
     `数量：${item.count || 0}`,
   ]
   if (totalPrice > 0) {
-    messages.push(`售出总金币：${totalPrice}${priceUnit}`)
+    messages.push(`售出总金币：${formatCurrencyAmountByLabel(totalPrice, priceUnit)}${priceUnit}`)
   }
   confirmModal.value = {
     show: true,
@@ -200,7 +201,7 @@ async function handleConfirm() {
           }
         }
         batchSellResult.value = { gold: totalGold, goldBean: totalGoldBean }
-        toastStore.success(`已批量出售 ${selectedItems.length} 种物品，获得 ${totalGold} 金币, ${totalGoldBean} 金豆豆`)
+        toastStore.success(`已批量出售 ${selectedItems.length} 种物品，获得 ${formatGoldAmount(totalGold)} 金币, ${formatGoldBeanAmount(totalGoldBean)} 金豆豆`)
         selectedForBatch.value.clear()
         batchMode.value = false
         await loadBag()
@@ -287,10 +288,10 @@ function handleBatchSellClick() {
     `确定要批量出售选中的 ${selectedList.length} 种物品吗?`,
   ]
   if (totalGold > 0) {
-    messages.push(`金币：${totalGold}`)
+    messages.push(`金币：${formatGoldAmount(totalGold)}`)
   }
   if (totalGoldBean > 0) {
-    messages.push(`金豆豆：${totalGoldBean}`)
+    messages.push(`金豆豆：${formatGoldBeanAmount(totalGoldBean)}`)
   }
 
   confirmModal.value = {

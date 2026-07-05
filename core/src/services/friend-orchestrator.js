@@ -5,6 +5,7 @@ const {
   getAutoAcceptFriendMinLevel,
   getKnownFriendGids,
   applyConfigSnapshot,
+  getFriendBadRetryDate,
   readFriendDogInfoCache,
 } = require('../models/store');
 const { getUserState, isConnected, networkEvents } = require('../utils/network');
@@ -45,6 +46,9 @@ let friendLoopRunning = false;
 let externalSchedulerMode = false;
 const friendScheduler = createScheduler('friend');
 let badExecutedOnStartup = false;
+let consecutiveBadFailureCount = 0;
+
+const BAD_FAILURE_LIMIT = 3;
 
 // ===== Helpers =====
 
@@ -63,6 +67,107 @@ function isTransientNetworkError(err) {
 
 function clearFriendsListCache() {
   setFriendsListCache(null);
+}
+
+function syncAutomationPatchToMaster(patch) {
+  postToMaster({
+    type: 'automation_patch',
+    patch,
+  });
+}
+
+function resetBadFailureCount() {
+  consecutiveBadFailureCount = 0;
+}
+
+function getLocalDateKey(offsetDays = 0) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function pauseFriendBadUntilTomorrow(reason) {
+  const accountId = process.env.FARM_ACCOUNT_ID || '';
+  const retryDate = getLocalDateKey(1);
+  applyConfigSnapshot(
+    { friendBadRetryDate: retryDate },
+    { accountId }
+  );
+  syncAutomationPatchToMaster({ friendBadRetryDate: retryDate });
+  resetBadFailureCount();
+  log('好友', `捣乱连续失败 ${BAD_FAILURE_LIMIT} 次，已暂停至 ${retryDate} 再尝试。最后错误: ${reason || '未知'}`, {
+    module: 'friend',
+    event: '自动暂停捣乱',
+    result: 'paused',
+    failureCount: BAD_FAILURE_LIMIT,
+    retryDate,
+    reason,
+  });
+}
+
+function isFriendBadPaused() {
+  const accountId = process.env.FARM_ACCOUNT_ID || '';
+  const retryDate = getFriendBadRetryDate(accountId);
+  if (!retryDate) return false;
+  if (getLocalDateKey() < retryDate) return true;
+
+  applyConfigSnapshot({ friendBadRetryDate: '' }, { accountId });
+  syncAutomationPatchToMaster({ friendBadRetryDate: '' });
+  resetBadFailureCount();
+  return false;
+}
+
+function recordBadFailure(reason, context = {}) {
+  consecutiveBadFailureCount += 1;
+  log('好友', `捣乱失败 ${consecutiveBadFailureCount}/${BAD_FAILURE_LIMIT}: ${reason || '未知错误'}`, {
+    module: 'friend',
+    event: '捣乱失败计数',
+    result: 'error',
+    failureCount: consecutiveBadFailureCount,
+    failureLimit: BAD_FAILURE_LIMIT,
+    reason,
+    ...context,
+  });
+
+  if (consecutiveBadFailureCount >= BAD_FAILURE_LIMIT) {
+    pauseFriendBadUntilTomorrow(reason);
+    return true;
+  }
+
+  return false;
+}
+
+function isIgnorableBadFailureMessage(message) {
+  const text = String(message || '');
+  if (!text) return true;
+  return [
+    '??',
+    'No target',
+    '?????',
+    '1001046',
+    'used up',
+    'no target',
+  ].some(kw => text.includes(kw));
+}
+
+function trackBadVisitResult(result, target, context = {}) {
+  const count = Number(result && result.count || 0);
+  if (count > 0) {
+    resetBadFailureCount();
+    return false;
+  }
+
+  const message = String(result && result.message || '').trim();
+  if (isIgnorableBadFailureMessage(message)) return false;
+
+  return recordBadFailure(message, {
+    friendName: target && target.name,
+    friendGid: target && target.gid,
+    ...context,
+  });
 }
 
 // ===== Main friend check routine =====
@@ -224,7 +329,7 @@ async function checkFriends(options = {}) {
         if (!canOperate(0x2714)) break; // 10004 = steal
         try {
           await visitFriendForSteal(target, tally, userState.gid, userState.accountId);
-        } catch (_) {
+        } catch {
           // Skip individual failures
         }
         await randomDelay(500, 1500);
@@ -235,7 +340,7 @@ async function checkFriends(options = {}) {
     if (tally.steal > 0) {
       try {
         await sellAllFruits();
-      } catch (_) {
+      } catch {
         // Ignore sell errors
       }
     }
@@ -248,7 +353,7 @@ async function checkFriends(options = {}) {
             target, tally, userState.gid, userState.accountId,
             ignoreExpLimit, helpExpReached
           );
-        } catch (_) {
+        } catch {
           // Skip individual failures
         }
         await randomDelay(
@@ -259,7 +364,7 @@ async function checkFriends(options = {}) {
     }
 
     // Bad (put weeds/insects)
-    if (doBad) {
+    if (doBad && !isFriendBadPaused()) {
       log('好友', '开始自动放虫放草', {
         module: 'friend',
         event: '开始自动放虫放草',
@@ -319,9 +424,18 @@ async function checkFriends(options = {}) {
           }
 
           try {
-            await visitFriend(target, tally, userState.gid, userState.accountId);
-          } catch (_) {
-            // Skip
+            const result = await visitFriend(target, tally, userState.gid, userState.accountId);
+            if (trackBadVisitResult(result, target, { source: 'friend_check' })) {
+              break;
+            }
+          } catch (err) {
+            if (recordBadFailure(err && err.message, {
+              friendName: target.name,
+              friendGid: target.gid,
+              source: 'friend_check',
+            })) {
+              break;
+            }
           }
           await randomDelay(500, 1500);
         }
@@ -484,7 +598,7 @@ async function checkAndAcceptApplications() {
 
     const gids = toAccept.map(app => toNum(app.gid));
     await acceptFriendsWithRetry(gids);
-  } catch (_) {
+  } catch {
     // Ignore application check errors
   }
 }
@@ -566,6 +680,7 @@ async function runBadOnceOnStartup(force = false) {
 
   const badEnabled = isAutomationOn('friend_bad');
   if (!badEnabled) return;
+  if (isFriendBadPaused()) return;
 
   const userState = getUserState();
   if (!userState.gid) {
@@ -665,8 +780,11 @@ async function runBadOnceOnStartup(force = false) {
       );
 
       try {
-        await visitFriend(target, tally, userState.gid, accountId);
+        const result = await visitFriend(target, tally, userState.gid, accountId);
         processedCount++;
+        if (trackBadVisitResult(result, target, { source: 'startup_bad' })) {
+          break;
+        }
       } catch (err) {
         log('好友', `放虫放草失败: ${target.name}, 错误: ${err.message}`, {
           module: 'friend',
@@ -674,6 +792,13 @@ async function runBadOnceOnStartup(force = false) {
           friendName: target.name,
           error: err.message,
         });
+        if (recordBadFailure(err && err.message, {
+          friendName: target.name,
+          friendGid: target.gid,
+          source: 'startup_bad',
+        })) {
+          break;
+        }
       }
       await randomDelay(500, 1500);
     }

@@ -7,6 +7,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAccountStore } from '@/stores/account'
 import { useIllustratedStore } from '@/stores/illustrated'
 import { useToastStore } from '@/stores/toast'
+import { formatGoldAmount } from '@/utils/number-format'
 
 const accountStore = useAccountStore()
 const illustratedStore = useIllustratedStore()
@@ -142,7 +143,7 @@ async function buyAll() {
 function confirmBuySeed(item: any) {
   openConfirm(
     '确认购买',
-    `确定购买 ${item.name} 吗？\n价格：${Number(item.price || 0).toLocaleString()} 金币`,
+    `确定购买 ${item.name} 吗？\n价格：${formatGoldAmount(item.price || 0)} 金币`,
     () => buySeed(item),
   )
 }

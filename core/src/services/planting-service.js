@@ -1,14 +1,27 @@
 const { sendMsgAsync, getUserState, getWsErrorState } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { toNum, toLong, log, logWarn, sleep } = require('../utils/utils');
-const { getPlantNameBySeedId, getPlantGrowTime, formatGrowTime, getAllSeeds, getPlantBySeedId } = require('../config/gameConfig');
-const { getPlantingStrategy, getPreferredSeed, getBagSeedPriority, getBagSeedFallbackStrategy } = require('../models/store');
+const { toNum, toLong, toTimeSec, getServerTimeSec, log, logWarn, sleep } = require('../utils/utils');
+const { getPlantNameBySeedId, getPlantGrowTime, formatGrowTime, getAllSeeds, getPlantBySeedId, getPlantById } = require('../config/gameConfig');
+const {
+  getPlantingStrategy,
+  getPreferredSeed,
+  getBagSeedPriority,
+  getBagSeedFallbackStrategy,
+  getPrioritize2x2Crops,
+} = require('../models/store');
 const { getPlantRankings } = require('./analytics');
 const { getBagSeeds } = require('./warehouse');
 const { getShopInfo, buyGoods, getSeedShopId } = require('./farm-api');
 const { buildLandMap, getDisplayLandContext } = require('./farm-land-analyzer');
 const { runFertilizerByConfig } = require('./farm-fertilizer');
 const { removePlant } = require('./farm-api');
+
+const FARM_COLUMNS = 4;
+const FARM_ROWS = 6;
+let reserved2x2GroupKeys = [];
+let last2x2WaitingSignature = '';
+const failed2x2Retries = new Map();
+const TWO_BY_TWO_RETRY_DELAY_MS = 30_000;
 
 // ─── 种植策略标签 ───
 
@@ -49,6 +62,286 @@ function getPlantSizeBySeedId(seedId) {
   return Math.max(1, toNum(plant && plant.size) || 1);
 }
 
+function groupKey(landIds) {
+  return [...landIds].map(Number).sort((a, b) => a - b).join('-');
+}
+
+/** 构建所有合法 2x2 组合；协议锚点为左下角。 */
+function build2x2LandGroups(lands) {
+  const unlockedIds = new Set(
+    (Array.isArray(lands) ? lands : [])
+      .filter(land => land?.unlocked)
+      .map(land => toNum(land.id))
+      .filter(Boolean)
+  );
+  const groups = [];
+
+  for (let bottomRow = 1; bottomRow < FARM_ROWS; bottomRow++) {
+    for (let column = 0; column < FARM_COLUMNS - 1; column++) {
+      const masterLandId = bottomRow * FARM_COLUMNS + column + 1;
+      const landIds = [
+        masterLandId,
+        masterLandId + 1,
+        masterLandId - FARM_COLUMNS,
+        masterLandId - FARM_COLUMNS + 1,
+      ];
+      if (!landIds.every(id => unlockedIds.has(id))) continue;
+      groups.push({
+        key: groupKey(landIds),
+        masterLandId,
+        landIds,
+      });
+    }
+  }
+  return groups;
+}
+
+function getActive2x2Footprints(lands) {
+  return (Array.isArray(lands) ? lands : [])
+    .map((land) => {
+      const masterLandId = toNum(land?.id);
+      const slaves = Array.isArray(land?.slave_land_ids)
+        ? land.slave_land_ids.map(toNum).filter(Boolean)
+        : [];
+      const landIds = [masterLandId, ...slaves].filter(Boolean);
+      return slaves.length === 3
+        ? { key: groupKey(landIds), landIds: new Set(landIds) }
+        : null;
+    })
+    .filter(Boolean);
+}
+
+function overlapsLandIds(left, right) {
+  return left.some(id => right.has(id));
+}
+
+function selectMaximumNonOverlappingGroups(groups, limit) {
+  const candidates = [...groups].sort((a, b) => a.masterLandId - b.masterLandId);
+  let best = [];
+
+  function search(index, selected, occupied) {
+    if (selected.length > best.length) best = [...selected];
+    if (selected.length >= limit || index >= candidates.length) return;
+    if (selected.length + candidates.length - index <= best.length) return;
+
+    const group = candidates[index];
+    if (!group.landIds.some(id => occupied.has(id))) {
+      const nextOccupied = new Set(occupied);
+      group.landIds.forEach(id => nextOccupied.add(id));
+      search(index + 1, [...selected, group], nextOccupied);
+    }
+    search(index + 1, selected, occupied);
+  }
+
+  search(0, [], new Set());
+  return best;
+}
+
+function getEstimatedLandClearAt(land, emptySet) {
+  const landId = toNum(land?.id);
+  if (emptySet.has(landId)) return 0;
+
+  const plant = land?.plant;
+  const phases = Array.isArray(plant?.phases) ? plant.phases : [];
+  if (phases.length === 0) return 0;
+
+  const maturePhase = phases.find(phase => toNum(phase?.phase) === 6);
+  const matureAt = toTimeSec(maturePhase?.begin_time);
+  if (matureAt <= 0) return Number.MAX_SAFE_INTEGER;
+
+  const plantConfig = getPlantById(toNum(plant.id));
+  const currentSeason = Math.max(1, toNum(plant.season) || 1);
+  const totalSeasons = Math.max(currentSeason, toNum(plantConfig?.seasons) || currentSeason);
+  const remainingSeasons = Math.max(0, totalSeasons - currentSeason);
+  const growSeconds = Math.max(0, toNum(getPlantGrowTime(toNum(plant.id))));
+
+  return Math.max(getServerTimeSec(), matureAt) + remainingSeasons * growSeconds;
+}
+
+/** 优先选择已完全空闲的组合，并且最多保留一个仍在等待清空的组合。 */
+function select2x2Reservations(groups, emptyLandIds, desiredCount, lands) {
+  const emptySet = new Set((emptyLandIds || []).map(toNum).filter(Boolean));
+  const landMap = buildLandMap(lands);
+  const activeFootprints = getActive2x2Footprints(lands);
+  const candidates = (groups || []).filter((group) => {
+    return !activeFootprints.some(
+      footprint => overlapsLandIds(group.landIds, footprint.landIds)
+    );
+  });
+  const ready = candidates
+    .filter(group => group.landIds.every(id => emptySet.has(id)));
+  const selected = selectMaximumNonOverlappingGroups(ready, desiredCount);
+  const occupied = new Set(selected.flatMap(group => group.landIds));
+
+  const previousReservations = new Set(reserved2x2GroupKeys);
+  const waiting = candidates
+    .filter(group => !group.landIds.every(id => emptySet.has(id)))
+    .sort((a, b) => {
+      const clearAtA = Math.max(...a.landIds.map(id => getEstimatedLandClearAt(landMap.get(id), emptySet)));
+      const clearAtB = Math.max(...b.landIds.map(id => getEstimatedLandClearAt(landMap.get(id), emptySet)));
+      if (clearAtA !== clearAtB) return clearAtA - clearAtB;
+      const reservedA = previousReservations.has(a.key) ? 1 : 0;
+      const reservedB = previousReservations.has(b.key) ? 1 : 0;
+      if (reservedA !== reservedB) return reservedB - reservedA;
+      const emptyA = a.landIds.filter(id => emptySet.has(id)).length;
+      const emptyB = b.landIds.filter(id => emptySet.has(id)).length;
+      return emptyB - emptyA || a.masterLandId - b.masterLandId;
+    });
+
+  // 已完整空闲的区域可以种植多组；需要等待的区域最多只预留一组。
+  for (const group of waiting) {
+    if (selected.length >= desiredCount) break;
+    if (group.landIds.some(id => occupied.has(id))) continue;
+    selected.push(group);
+    group.landIds.forEach(id => occupied.add(id));
+    break;
+  }
+
+  reserved2x2GroupKeys = selected
+    .filter(group => !group.landIds.every(id => emptySet.has(id)))
+    .map(group => group.key);
+  return selected;
+}
+
+function expandRemoved2x2Lands(emptyLandIds, removedLandIds, lands) {
+  const result = new Set((emptyLandIds || []).map(toNum).filter(Boolean));
+  const landMap = buildLandMap(lands);
+  for (const rawId of removedLandIds || []) {
+    const landId = toNum(rawId);
+    if (!landId) continue;
+    result.add(landId);
+    const land = landMap.get(landId);
+    for (const slaveId of land?.slave_land_ids || []) {
+      const id = toNum(slaveId);
+      if (id) result.add(id);
+    }
+  }
+  return [...result];
+}
+
+async function plant2x2Seed(seedId, group) {
+  const payload = encodePlantRequest(seedId, group.landIds);
+  const { body } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Plant', payload);
+  const reply = types.PlantReply.decode(body);
+  const landMap = buildLandMap(reply?.land || []);
+  const master = landMap.get(group.masterLandId);
+  const actualSlaves = new Set(
+    (master?.slave_land_ids || []).map(toNum).filter(Boolean)
+  );
+  const expectedSlaves = group.landIds.filter(id => id !== group.masterLandId);
+  const linked = expectedSlaves.every((id) => {
+    return actualSlaves.has(id) && toNum(landMap.get(id)?.master_land_id) === group.masterLandId;
+  });
+  if (!master || toNum(master.land_size) !== 2 || !linked) {
+    throw new Error(`服务器未确认 2x2 土地关联: ${group.landIds.join(',')}`);
+  }
+  return {
+    masterLandId: group.masterLandId,
+    occupiedLandIds: [...group.landIds],
+  };
+}
+
+async function plantPrioritized2x2Crops(emptyLandIds, lands, accountId) {
+  if (!getPrioritize2x2Crops(accountId)) {
+    reserved2x2GroupKeys = [];
+    last2x2WaitingSignature = '';
+    return { reservedLandIds: [], plantedMasterIds: [] };
+  }
+
+  let bagSeeds;
+  try {
+    bagSeeds = await getBagSeeds();
+  } catch (err) {
+    logWarn('种植', `读取四格种子失败，继续普通种植: ${err.message}`, {
+      module: 'farm',
+      event: '读取2x2种子',
+      result: 'error',
+    });
+    return { reservedLandIds: [], plantedMasterIds: [] };
+  }
+  const size2Seeds = sortBagSeedsForPlanting(
+    bagSeeds.filter(seed => Number(seed?.count) > 0 && Number(seed?.plantSize) === 2),
+    getBagSeedPriority(accountId)
+  ).map(seed => ({ ...seed, count: Number(seed.count) || 0 }));
+
+  const totalSeedCount = size2Seeds.reduce((sum, seed) => sum + seed.count, 0);
+  if (totalSeedCount <= 0) {
+    reserved2x2GroupKeys = [];
+    last2x2WaitingSignature = '';
+    return { reservedLandIds: [], plantedMasterIds: [] };
+  }
+
+  const groups = build2x2LandGroups(lands);
+  const reservations = select2x2Reservations(
+    groups,
+    emptyLandIds,
+    Math.min(totalSeedCount, groups.length),
+    lands
+  );
+  const reservedLandIds = [...new Set(reservations.flatMap(group => group.landIds))];
+  const emptySet = new Set((emptyLandIds || []).map(toNum).filter(Boolean));
+  const readyGroups = reservations.filter(group => group.landIds.every(id => emptySet.has(id)));
+  const plantedMasterIds = [];
+  let seedIndex = 0;
+
+  for (const group of readyGroups) {
+    while (seedIndex < size2Seeds.length && size2Seeds[seedIndex].count <= 0) seedIndex++;
+    const seed = size2Seeds[seedIndex];
+    if (!seed) break;
+
+    const retryKey = `${group.key}:${seed.seedId}`;
+    const retryAt = failed2x2Retries.get(retryKey) || 0;
+    if (retryAt > Date.now()) continue;
+
+    try {
+      const result = await plant2x2Seed(seed.seedId, group);
+      failed2x2Retries.delete(retryKey);
+      seed.count -= 1;
+      plantedMasterIds.push(result.masterLandId);
+      result.occupiedLandIds.forEach(id => emptySet.delete(id));
+      log('种植', `已优先种植 2x2 作物 ${seed.name}，主地块#${result.masterLandId}，占地 ${result.occupiedLandIds.join(',')}`, {
+        module: 'farm',
+        event: '种植2x2作物',
+        result: 'ok',
+        seedId: seed.seedId,
+        masterLandId: result.masterLandId,
+        landIds: result.occupiedLandIds,
+      });
+    } catch (err) {
+      failed2x2Retries.set(retryKey, Date.now() + TWO_BY_TWO_RETRY_DELAY_MS);
+      logWarn('种植', `2x2 作物 ${seed.name} 种植失败: ${err.message}`, {
+        module: 'farm',
+        event: '种植2x2作物',
+        result: 'error',
+        seedId: seed.seedId,
+        landIds: group.landIds,
+      });
+    }
+    await sleep(200, 400);
+  }
+
+  if (reservations.length > readyGroups.length) {
+    const readyKeys = new Set(readyGroups.map(group => group.key));
+    const waiting = reservations
+      .filter(group => !readyKeys.has(group.key))
+      .map(group => group.landIds.join(','));
+    const waitingSignature = waiting.join('|');
+    if (waiting.length > 0 && waitingSignature !== last2x2WaitingSignature) {
+      log('种植', `已为 2x2 作物预留土地，等待区域清空: ${waiting.join(' | ')}`, {
+        module: 'farm',
+        event: '预留2x2土地',
+        result: 'waiting',
+        groups: waiting,
+      });
+    }
+    last2x2WaitingSignature = waitingSignature;
+  } else {
+    last2x2WaitingSignature = '';
+  }
+
+  return { reservedLandIds, plantedMasterIds };
+}
+
 // ─── 种植核心 ───
 
 /**
@@ -56,7 +349,7 @@ function getPlantSizeBySeedId(seedId) {
  * @param {number} seedId - 种子 ID
  * @param {number[]} landIds - 地块 ID 列表
  * @param {object} options - { maxPlantCount }
- * @returns {{ planted, plantedLandIds, occupiedLandIds }}
+ * @returns {{ planted, plantedLandIds, occupiedLandIds }} 种植结果
  */
 async function plantSeeds(seedId, landIds, options = {}) {
   let planted = 0;
@@ -283,8 +576,10 @@ async function findBestSeed(overrideStrategy, accountId = getCurrentAccountId())
     const boughtNum = toNum(goods.bought_num);
     if (limitCount > 0 && boughtNum >= limitCount) continue;
 
+    const seedId = toNum(goods.item_id);
+    if (getPlantSizeBySeedId(seedId) !== 1) continue;
     candidates.push({
-      goods, goodsId: toNum(goods.id), seedId: toNum(goods.item_id),
+      goods, goodsId: toNum(goods.id), seedId,
       price: toNum(goods.price), requiredLevel
     });
   }
@@ -372,6 +667,7 @@ async function findBestSeedFromLocal(overrideStrategy, accountId = getCurrentAcc
   const availableSeeds = allSeeds.reduce((list, seed) => {
     const seedId = Number(seed && seed.seedId) || 0;
     if (seedId <= 0 || !ownedSeedMap.has(seedId)) return list;
+    if (getPlantSizeBySeedId(seedId) !== 1) return list;
 
     const owned = ownedSeedMap.get(seedId);
     list.push({
@@ -416,7 +712,7 @@ async function findBestSeedFromLocal(overrideStrategy, accountId = getCurrentAcc
         const match = availableSeeds.find(s => s.seedId === seedId);
         if (match && match.requiredLevel <= userState.level) return match;
       }
-    } catch (_) { /* fall through */ }
+    } catch { /* fall through */ }
   }
 
   // 回退策略：按等级降序，选当前等级以下最高等级种子
@@ -484,8 +780,8 @@ async function getAvailableSeeds() {
  * @param {number[]} deadLandIds - 枯死地块（需先铲除）
  * @param {number[]} emptyLandIds - 空地
  */
-async function autoPlantEmptyLands(deadLandIds, emptyLandIds) {
-  const allEmptyLands = [...emptyLandIds];
+async function autoPlantEmptyLands(deadLandIds, emptyLandIds, lands = []) {
+  let allEmptyLands = [...emptyLandIds];
   const userState = getUserState();
   const accountId = getCurrentAccountId();
 
@@ -505,15 +801,24 @@ async function autoPlantEmptyLands(deadLandIds, emptyLandIds) {
     }
   }
 
-  if (allEmptyLands.length === 0) return;
-
+  allEmptyLands = expandRemoved2x2Lands(allEmptyLands, deadLandIds, lands);
   const strategy = String(getPlantingStrategy(accountId) || '').trim();
+  const size2Result = await plantPrioritized2x2Crops(allEmptyLands, lands, accountId);
+  const reservedLandSet = new Set(size2Result.reservedLandIds || []);
+  const normalEmptyLands = allEmptyLands.filter(id => !reservedLandSet.has(Number(id)));
+
+  if (size2Result.plantedMasterIds.length > 0) {
+    await runFertilizerByConfig(size2Result.plantedMasterIds);
+  }
+
+  if (allEmptyLands.length === 0) return;
+  if (normalEmptyLands.length === 0) return;
 
   // 背包优先策略
   if (strategy === 'bag_priority') {
     let bagResult;
     try {
-      bagResult = await plantFromBagSeeds(allEmptyLands, accountId);
+      bagResult = await plantFromBagSeeds(normalEmptyLands, accountId);
     } catch (err) {
       logWarn('种植', `读取背包种子失败，本轮跳过第二优先策略以避免误购: ${err.message}`, {
         module: 'farm', event: '种植种子', result: 'bag_load_error'
@@ -542,7 +847,7 @@ async function autoPlantEmptyLands(deadLandIds, emptyLandIds) {
   }
 
   // 商店购买种植
-  const shopResult = await plantFromShop(allEmptyLands, userState, undefined, accountId);
+  const shopResult = await plantFromShop(normalEmptyLands, userState, undefined, accountId);
   if (shopResult.plantedLands && shopResult.plantedLands.length > 0) {
     await runFertilizerByConfig(shopResult.plantedLands);
   }
@@ -681,6 +986,12 @@ async function plantFromShop(landIds, userState, overrideStrategy, accountId = g
 module.exports = {
   encodePlantRequest,
   getPlantSizeBySeedId,
+  build2x2LandGroups,
+  selectMaximumNonOverlappingGroups,
+  select2x2Reservations,
+  expandRemoved2x2Lands,
+  plant2x2Seed,
+  plantPrioritized2x2Crops,
   plantSeeds,
   PLANTING_STRATEGY_LABELS,
   getPlantingStrategyLabel,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import BaseButton from '@/components/ui/BaseButton.vue'
+import { formatCouponAmount } from '@/utils/number-format'
 
 defineProps<{
   item: any
@@ -46,7 +47,7 @@ function itemImage(item: any) {
         {{ item.name }}
       </div>
       <div class="mt-1 text-center text-xs text-amber-600 font-semibold dark:text-amber-400">
-        {{ item.isFree ? L.free : `${item.price.toLocaleString()} ${L.coupon}` }}
+        {{ item.isFree ? L.free : `${formatCouponAmount(item.price)} ${L.coupon}` }}
       </div>
       <p v-if="item.discount" class="line-clamp-2 mt-2 text-[11px] text-blue-500 leading-5 dark:text-blue-400">
         {{ item.discount }}

@@ -82,7 +82,7 @@ async function getMallGoodsList(slotType = 1) {
   for (const raw of rawList) {
     try {
       goodsList.push(types.MallGoods.decode(raw));
-    } catch (_) {
+    } catch {
       // 跳过解码失败的
     }
   }
@@ -374,7 +374,7 @@ async function autoBuyOrganicFertilizer(force = false) {
       });
     }
     return bought;
-  } catch (_) {
+  } catch {
     return 0;
   }
 }
@@ -399,7 +399,7 @@ async function autoBuyFertilizer(force = false, type = 'organic', targetCount = 
       });
     }
     return bought;
-  } catch (_) {
+  } catch {
     return 0;
   }
 }
@@ -422,14 +422,16 @@ async function buyFreeGifts(force = false) {
   freeGiftLastCheckAt = now;
 
   try {
-    const reply = await getMallListBySlotType(2);
+    // 抓包显示“每日福利”(goodsId=1001)位于 slot_type=1。
+    // 旧实现请求 slot_type=2，导致自动任务无法找到免费商品。
+    const reply = await getMallListBySlotType(1);
     const rawList = Array.isArray(reply && reply.goods_list) ? reply.goods_list : [];
     const goodsList = [];
 
     for (const raw of rawList) {
       try {
         goodsList.push(types.MallGoods.decode(raw));
-      } catch (_) {
+      } catch {
         // skip
       }
     }
@@ -451,7 +453,7 @@ async function buyFreeGifts(force = false) {
       try {
         await purchaseMallGoods(Number(goods.goods_id || 0), 1);
         claimed += 1;
-      } catch (_) {
+      } catch {
         // skip failed
       }
     }

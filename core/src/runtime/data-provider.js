@@ -19,7 +19,6 @@ function createDataProvider(deps) {
         buildDefaultStatus,
         normalizeStatusForPanel,
         filterLogs,
-        addAccountLog,
         nextConfigRevision,
         broadcastConfigToWorkers,
         startWorker,
@@ -155,6 +154,9 @@ function createDataProvider(deps) {
         // ========== Mall ==========
         getMallGoods: (ref) => callWorkerApi(resolveAccountId(ref), 'getMallGoods'),
         buyMallGoods: (ref, goodsId, count) => callWorkerApi(resolveAccountId(ref), 'buyMallGoods', goodsId, count),
+        getMysteryShop: (ref) => callWorkerApi(resolveAccountId(ref), 'getMysteryShop'),
+        buyMysteryShopGoods: (ref, npcId) => callWorkerApi(resolveAccountId(ref), 'buyMysteryShopGoods', npcId),
+        abandonMysteryShop: (ref) => callWorkerApi(resolveAccountId(ref), 'abandonMysteryShop'),
 
         // ========== Activity ==========
         getActivityShop: (ref) => callWorkerApi(resolveAccountId(ref), 'getActivityShop'),
@@ -189,6 +191,7 @@ function createDataProvider(deps) {
             const patch = {
                 plantingStrategy: s.plantingStrategy !== undefined ? s.plantingStrategy : s.strategy,
                 preferredSeedId: s.preferredSeedId !== undefined ? s.preferredSeedId : s.seedId,
+                prioritize2x2Crops: s.prioritize2x2Crops,
                 intervals: s.intervals,
                 friendQuietHours: s.friendQuietHours,
                 autoCodeRefresh: s.autoCodeRefresh,
@@ -213,6 +216,7 @@ function createDataProvider(deps) {
             return {
                 strategy: store.getPlantingStrategy(id),
                 preferredSeed: store.getPreferredSeed(id),
+                prioritize2x2Crops: store.getPrioritize2x2Crops(id),
                 intervals: store.getIntervals(id),
                 friendQuietHours: store.getFriendQuietHours(id),
                 autoCodeRefresh: store.getAutoCodeRefresh(id),

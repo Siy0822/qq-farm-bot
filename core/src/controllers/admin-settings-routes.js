@@ -83,6 +83,10 @@ function buildSettingsPayload(store, accountId, currentUser) {
     intervals: accountId ? store.getIntervals(accountId) : {},
     plantingStrategy: accountId ? store.getPlantingStrategy(accountId) : null,
     preferredSeedId: accountId ? store.getPreferredSeed(accountId) : null,
+    prioritize2x2Crops:
+      accountId && typeof store.getPrioritize2x2Crops === "function"
+        ? store.getPrioritize2x2Crops(accountId)
+        : true,
     friendQuietHours: accountId ? store.getFriendQuietHours(accountId) : null,
     automation: accountId ? store.getAutomation(accountId) : {},
     autoCodeRefresh:

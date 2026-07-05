@@ -47,6 +47,7 @@ function createRuntimeState(deps) {
             automation: store.getAutomation(accountId),
             plantingStrategy: store.getPlantingStrategy(accountId),
             preferredSeedId: store.getPreferredSeed(accountId),
+            prioritize2x2Crops: store.getPrioritize2x2Crops(accountId),
             intervals: store.getIntervals(accountId),
             friendQuietHours: store.getFriendQuietHours(accountId),
             friendBlacklist: store.getFriendBlacklist(accountId),

@@ -7,10 +7,11 @@ BOT_PORT="${ADMIN_PORT:-3007}"
 
 cd "$ROOT_DIR"
 
-if command -v pnpm >/dev/null 2>&1; then
-  PNPM=(pnpm)
-elif command -v corepack >/dev/null 2>&1; then
+# 优先使用 Corepack，以遵循 package.json 中锁定的 pnpm 版本。
+if command -v corepack >/dev/null 2>&1; then
   PNPM=(corepack pnpm)
+elif command -v pnpm >/dev/null 2>&1; then
+  PNPM=(pnpm)
 else
   echo "[ERROR] 未找到 pnpm 或 corepack，请先安装 Node.js 20+。" >&2
   exit 1

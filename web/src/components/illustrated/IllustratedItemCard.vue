@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import { formatGoldAmount } from '@/utils/number-format'
 
 const props = defineProps<{
   item: any
@@ -84,7 +85,7 @@ watch(() => props.item?.image, () => {
           {{ unlockHint }}
         </div>
         <div v-if="item.canBuy && item.goodsId" class="text-amber-600 font-semibold dark:text-amber-400">
-          {{ L.price }} {{ Number(item.price || 0).toLocaleString() }} {{ L.gold }}
+          {{ L.price }} {{ formatGoldAmount(item.price || 0) }} {{ L.gold }}
         </div>
       </div>
 

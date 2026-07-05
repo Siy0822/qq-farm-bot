@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import BaseButton from '@/components/ui/BaseButton.vue'
+import { formatCurrencyAmount } from '@/utils/number-format'
 
 defineProps<{
   item: any
@@ -42,7 +43,7 @@ const L = {
         {{ item.name }}
       </div>
       <div class="mt-1 text-center text-xs text-amber-600 font-semibold dark:text-amber-400">
-        {{ item.price.toLocaleString() }} {{ item.isGoldenBean ? L.goldBean : L.gold }}
+        {{ formatCurrencyAmount(item.price, item.isGoldenBean ? 'goldBean' : 'gold') }} {{ item.isGoldenBean ? L.goldBean : L.gold }}
       </div>
       <p class="line-clamp-2 mt-2 text-[11px] text-gray-500 leading-5 dark:text-gray-400">
         {{ item.desc || L.noDesc }}

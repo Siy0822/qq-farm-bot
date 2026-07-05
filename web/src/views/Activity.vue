@@ -13,6 +13,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityStore } from '@/stores/activity'
 import { useToastStore } from '@/stores/toast'
+import { formatGoldAmount } from '@/utils/number-format'
 
 const L: ActivityLabels = {
   title: '\u6D3B\u52A8\u4E2D\u5FC3',
@@ -233,7 +234,7 @@ async function sellQingmeiWine() {
   const result = await activityStore.brewAndSellQingmeiWine(currentAccountId.value)
   if (result?.ok) {
     const gold = Number(result.sell?.gold || result.sell?.item?.itemCount || 0)
-    toast.success(gold > 0 ? `青梅酿售卖完成，获得金币 ${gold.toLocaleString()}` : '青梅酿售卖完成')
+    toast.success(gold > 0 ? `青梅酿售卖完成，获得金币 ${formatGoldAmount(gold)}` : '青梅酿售卖完成')
   }
   else {
     toast.error(result?.error || '青梅酿售卖失败')

@@ -4,7 +4,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import DecorationGoodsCard from '@/components/shop/DecorationGoodsCard.vue'
 import MallGoodsCard from '@/components/shop/MallGoodsCard.vue'
+import MysteryGoodsCard from '@/components/shop/MysteryGoodsCard.vue'
 import PetGoodsCard from '@/components/shop/PetGoodsCard.vue'
+import PurchaseQuantityModal from '@/components/shop/PurchaseQuantityModal.vue'
 import SeedGoodsCard from '@/components/shop/SeedGoodsCard.vue'
 import ShopAccountHeader from '@/components/shop/ShopAccountHeader.vue'
 import ShopEmptyState from '@/components/shop/ShopEmptyState.vue'
@@ -14,6 +16,7 @@ import { useAccountStore } from '@/stores/account'
 import { useShopStore } from '@/stores/shop'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
+import { formatCouponAmount, formatCurrencyAmountByLabel } from '@/utils/number-format'
 
 const accountStore = useAccountStore()
 const shopStore = useShopStore()
@@ -27,30 +30,49 @@ const {
   pets,
   decorations,
   mallGoods,
+  mysteryOffer,
   loading,
   petLoading,
   decorationLoading,
   mallLoading,
+  mysteryLoading,
   error,
   petError,
   decorationError,
   mallError,
+  mysteryError,
   userGoldBean,
 } = storeToRefs(shopStore)
 
-const tab = ref<'seed' | 'pet' | 'decoration' | 'mall'>('seed')
+const tab = ref<'seed' | 'pet' | 'decoration' | 'mall' | 'mystery'>('seed')
 const ascending = ref(true)
+const FERTILIZER_MALL_GOODS_IDS = new Set([1002, 1003])
 
 const showConfirm = ref(false)
 const confirmTitle = ref('确认购买')
 const confirmMessage = ref('')
 const confirmLoading = ref(false)
 const pendingAction = ref<null | (() => Promise<void>)>(null)
+const quantityModal = ref({
+  show: false,
+  item: null as any,
+  mode: 'shop' as 'shop' | 'mall',
+  currencyLabel: '',
+  balance: 0,
+  maxQuantity: 99,
+})
 
 const currentLevel = computed(() => status.value?.status?.level || 0)
 const currentGold = computed(() => status.value?.status?.gold || 0)
 const currentCoupon = computed(() => status.value?.status?.coupon || 0)
-const isAnyLoading = computed(() => loading.value || petLoading.value || decorationLoading.value || mallLoading.value)
+const isAnyLoading = computed(() => loading.value || petLoading.value || decorationLoading.value || mallLoading.value || mysteryLoading.value)
+const mysteryBalance = computed(() => {
+  if (mysteryOffer.value?.currencyId === 1002)
+    return currentCoupon.value
+  if (mysteryOffer.value?.currencyId === 1005)
+    return userGoldBean.value
+  return currentGold.value
+})
 const {
   canAffordGoods,
   canAffordDecoration,
@@ -81,7 +103,9 @@ const activeError = computed(() => {
     return petError.value
   if (tab.value === 'decoration')
     return decorationError.value
-  return mallError.value
+  if (tab.value === 'mall')
+    return mallError.value
+  return mysteryError.value
 })
 const activeIsEmpty = computed(() => {
   if (tab.value === 'seed')
@@ -90,7 +114,9 @@ const activeIsEmpty = computed(() => {
     return pets.value.length === 0
   if (tab.value === 'decoration')
     return decorations.value.length === 0
-  return mallGoods.value.length === 0
+  if (tab.value === 'mall')
+    return mallGoods.value.length === 0
+  return !mysteryOffer.value?.active
 })
 const activeEmptyMessage = computed(() => {
   switch (tab.value) {
@@ -102,6 +128,8 @@ const activeEmptyMessage = computed(() => {
       return '暂无装扮商品。'
     case 'mall':
       return '暂无道具商品。'
+    case 'mystery':
+      return '神秘商人暂未出现，请稍后刷新看看。'
   }
   return '暂无商品。'
 })
@@ -134,18 +162,25 @@ function closeConfirm() {
   pendingAction.value = null
 }
 
+function closeQuantityModal() {
+  if (confirmLoading.value)
+    return
+  quantityModal.value.show = false
+  quantityModal.value.item = null
+}
+
 async function refreshAll() {
   if (!currentAccountId.value)
     return
   await shopStore.refreshAll(currentAccountId.value)
 }
 
-async function buyGoods(item: any) {
+async function buyGoods(item: any, quantity = 1) {
   if (!currentAccountId.value)
     return
-  const result = await shopStore.buyGoods(currentAccountId.value, item.id, 1, item.price)
+  const result = await shopStore.buyGoods(currentAccountId.value, item.id, quantity, item.price)
   if (result?.ok) {
-    toast.success(`已购买 ${item.name}`)
+    toast.success(`已购买 ${item.name} x${quantity}`)
     await refreshAll()
   }
   else {
@@ -153,32 +188,125 @@ async function buyGoods(item: any) {
   }
 }
 
-async function buyMallGoods(item: any) {
+async function buyMallGoods(item: any, quantity = 1) {
   if (!currentAccountId.value)
     return
-  const result = await shopStore.buyMallGoods(currentAccountId.value, item.goodsId, 1)
+  const result = await shopStore.buyMallGoods(currentAccountId.value, item.goodsId, quantity)
   if (result?.ok) {
-    toast.success(`已购买 ${item.name}`)
+    toast.success(`已购买 ${item.name} x${quantity}`)
     await refreshAll()
   }
   else {
     toast.error(result?.error || '购买失败')
   }
+}
+
+async function buyMysteryGoods(item: any) {
+  if (!currentAccountId.value)
+    return
+  const result = await shopStore.buyMysteryShopGoods(currentAccountId.value, item.npcId)
+  if (result?.ok) {
+    const count = Number(result.data?.reward?.count || item.itemCount || 0)
+    toast.success(`已从神秘商人处购买 ${item.itemName} x${count}`)
+    await shopStore.fetchMysteryShop(currentAccountId.value)
+  }
+  else {
+    toast.error(result?.error || '购买失败')
+  }
+}
+
+function confirmBuyMysteryGoods(item: any) {
+  openConfirm(
+    '确认购买神秘商品',
+    `确定购买 ${item.itemName} x${item.itemCount} 吗？
+价格：${formatCurrencyAmountByLabel(item.price || 0, item.currencyName)} ${item.currencyName}
+购买完成后神秘商人将离开。`,
+    () => buyMysteryGoods(item),
+  )
+}
+
+async function abandonMysteryMerchant() {
+  if (!currentAccountId.value)
+    return
+  const result = await shopStore.abandonMysteryShop(currentAccountId.value)
+  if (result?.ok) {
+    toast.success('已请离神秘商人')
+    await shopStore.fetchMysteryShop(currentAccountId.value)
+  }
+  else {
+    toast.error(result?.error || '请离失败')
+  }
+}
+
+function confirmAbandonMysteryMerchant() {
+  openConfirm(
+    '请离神秘商人',
+    '确定请离当前神秘商人吗？请离后本次商品将无法购买。',
+    abandonMysteryMerchant,
+  )
+}
+
+function getShopMaxQuantity(item: any, balance: number) {
+  const price = Number(item?.price || 0)
+  const byBalance = price > 0 ? Math.floor(Number(balance || 0) / price) : 99
+  const limitCount = Number(item?.limitCount || 0)
+  const boughtNum = Number(item?.boughtNum || 0)
+  const byLimit = limitCount > 0 ? Math.max(0, limitCount - boughtNum) : 99
+  return Math.max(1, Math.min(99, byBalance, byLimit))
+}
+
+function openQuantityModal(item: any, mode: 'shop' | 'mall', currencyLabel: string, balance: number) {
+  quantityModal.value = {
+    show: true,
+    item,
+    mode,
+    currencyLabel,
+    balance,
+    maxQuantity: getShopMaxQuantity(item, balance),
+  }
+}
+
+async function runQuantityPurchase(quantity: number) {
+  const target = quantityModal.value.item
+  if (!target)
+    return
+  confirmLoading.value = true
+  try {
+    if (quantityModal.value.mode === 'mall')
+      await buyMallGoods(target, quantity)
+    else
+      await buyGoods(target, quantity)
+    closeQuantityModal()
+  }
+  finally {
+    confirmLoading.value = false
+  }
+}
+
+function confirmBuySeedGoods(item: any) {
+  openQuantityModal(item, 'shop', '金币', currentGold.value)
 }
 
 function confirmBuyGoods(item: any, currencyLabel: string) {
   openConfirm(
     '确认购买',
-    `确定购买 ${item.name} 吗？\n价格：${Number(item.price || 0).toLocaleString()} ${currencyLabel}`,
+    `确定购买 ${item.name} 吗？
+价格：${formatCurrencyAmountByLabel(item.price || 0, currencyLabel)} ${currencyLabel}`,
     () => buyGoods(item),
   )
 }
 
 function confirmBuyMallGoods(item: any) {
-  const priceText = item.isFree ? '免费' : `${Number(item.price || 0).toLocaleString()} 点券`
+  if (FERTILIZER_MALL_GOODS_IDS.has(Number(item.goodsId))) {
+    openQuantityModal(item, 'mall', '点券', currentCoupon.value)
+    return
+  }
+
+  const priceText = item.isFree ? '免费' : `${formatCouponAmount(item.price || 0)} 点券`
   openConfirm(
     '确认购买',
-    `确定购买 ${item.name} 吗？\n价格：${priceText}`,
+    `确定购买 ${item.name} 吗？
+价格：${priceText}`,
     () => buyMallGoods(item),
   )
 }
@@ -241,7 +369,7 @@ onMounted(() => {
             :can-afford="canAffordGoods(item)"
             :status-label="getSeedStatusLabel(item)"
             :hint="getSeedHint(item)"
-            @buy="confirmBuyGoods($event, '金币')"
+            @buy="confirmBuySeedGoods"
           />
         </div>
       </div>
@@ -283,7 +411,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <div v-else class="space-y-4">
+      <div v-else-if="tab === 'mall'" class="space-y-4">
         <div v-if="mallError" class="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
           {{ mallError }}
         </div>
@@ -300,6 +428,21 @@ onMounted(() => {
           />
         </div>
       </div>
+
+      <div v-else class="space-y-4">
+        <div v-if="mysteryError" class="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+          {{ mysteryError }}
+        </div>
+        <ShopEmptyState v-if="!mysteryOffer?.active" :message="activeEmptyMessage" />
+        <MysteryGoodsCard
+          v-else
+          :offer="mysteryOffer"
+          :balance="mysteryBalance"
+          :loading="confirmLoading"
+          @buy="confirmBuyMysteryGoods"
+          @abandon="confirmAbandonMysteryMerchant"
+        />
+      </div>
     </div>
 
     <ConfirmModal
@@ -310,6 +453,19 @@ onMounted(() => {
       @confirm="runConfirmedAction"
       @close="closeConfirm"
       @cancel="closeConfirm"
+    />
+    <PurchaseQuantityModal
+      :show="quantityModal.show"
+      :item-name="quantityModal.item?.name || ''"
+      :unit-price="Number(quantityModal.item?.price || 0)"
+      :currency-label="quantityModal.currencyLabel"
+      :balance="quantityModal.balance"
+      :max-quantity="quantityModal.maxQuantity"
+      :loading="confirmLoading"
+      :is-free="!!quantityModal.item?.isFree"
+      @confirm="runQuantityPurchase"
+      @close="closeQuantityModal"
+      @cancel="closeQuantityModal"
     />
   </section>
 </template>

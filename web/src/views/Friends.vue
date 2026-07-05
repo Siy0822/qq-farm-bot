@@ -13,6 +13,7 @@ import { useAccountStore } from '@/stores/account'
 import { useFriendStore } from '@/stores/friend'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
+import { formatGoldAmount } from '@/utils/number-format'
 
 const GID_BATCH_SEPARATOR_RE = /[,，\s]+/
 
@@ -368,7 +369,7 @@ function formatFriendGold(value: unknown) {
   const gold = Number.parseInt(String(value ?? ''), 10)
   if (!Number.isFinite(gold) || gold < 0)
     return '0'
-  return gold.toLocaleString('zh-CN')
+  return formatGoldAmount(gold)
 }
 
 function getFriendAvatar(friend: any) {

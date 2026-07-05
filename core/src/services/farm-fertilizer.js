@@ -135,6 +135,58 @@ function getFastMatureLands(lands, thresholdSec = 3600) {
   return result;
 }
 
+/**
+ * 获取处于成熟前最后一个生长阶段的地块（用于最终阶段施肥）
+ * @param {Array} lands - 地块数据
+ * @param {object} options - { organicOnly }
+ * @returns {number[]} 最终阶段地块 ID
+ */
+function getFinalStageLands(lands, options = {}) {
+  const list = Array.isArray(lands) ? lands : [];
+  const result = [];
+  const organicOnly = !!options.organicOnly;
+
+  for (const land of list) {
+    if (!land || !land.unlocked) continue;
+    const landId = toNum(land.id);
+    if (!landId) continue;
+
+    const plant = land.plant;
+    if (!plant || !Array.isArray(plant.phases) || plant.phases.length === 0) continue;
+
+    const currentPhase = getCurrentPhase(plant.phases);
+    if (!currentPhase) continue;
+
+    const currentPhaseValue = toNum(currentPhase.phase);
+    if (currentPhaseValue === PlantPhase.DEAD) continue;
+    if (currentPhaseValue === PlantPhase.MATURE) continue;
+
+    const orderedPhases = plant.phases
+      .map((phase, index) => ({
+        phase,
+        index,
+        beginTime: toTimeSec(phase && phase.begin_time)
+      }))
+      .filter(item => item.beginTime > 0)
+      .sort((a, b) => (a.beginTime - b.beginTime) || (a.index - b.index));
+
+    const matureIndex = orderedPhases.findIndex(item => toNum(item.phase && item.phase.phase) === PlantPhase.MATURE);
+    if (matureIndex <= 0) continue;
+
+    const currentIndex = orderedPhases.findIndex(item => item.phase === currentPhase);
+    if (currentIndex !== matureIndex - 1) continue;
+
+    if (organicOnly && Object.hasOwn(plant, 'left_inorc_fert_times')) {
+      const left = toNum(plant.left_inorc_fert_times);
+      if (left <= 0) continue;
+    }
+
+    result.push(landId);
+  }
+
+  return result;
+}
+
 /** 根据等级获取土地类型 */
 function getLandTypeByLevel(level) {
   const lv = toNum(level);
@@ -196,6 +248,13 @@ async function runFertilizerByConfig(explicitLandIds = [], options = {}) {
   const landTypes = normalizeFertilizerLandTypes(automation.fertilizer_land_types);
   const landTypeLabels = formatFertilizerLandTypes(landTypes);
 
+  if (reason === 'multi_season' && mode === 'final_normal') {
+    log('施肥', '多季补肥：当前策略为最终阶段普通肥，跳过本轮多季补肥', {
+      module: 'farm', event: eventLabel, result: 'skip', reason, type: 'normal'
+    });
+    return { normal: 0, organic: 0 };
+  }
+
   const explicitIds = [...new Set(
     (Array.isArray(explicitLandIds) ? explicitLandIds : [])
       .map(id => toNum(id))
@@ -215,7 +274,8 @@ async function runFertilizerByConfig(explicitLandIds = [], options = {}) {
   // 没有指定地块且非有机模式 → 空返回
   if (explicitIds.length === 0 &&
       mode !== 'organic' && mode !== 'both' &&
-      mode !== 'smart' && mode !== 'smart_only' && mode !== 'smart_normal') {
+      mode !== 'smart' && mode !== 'smart_only' && mode !== 'smart_normal' &&
+      mode !== 'final_normal' && mode !== 'final_organic') {
     return { normal: 0, organic: 0 };
   }
 
@@ -285,38 +345,50 @@ async function runFertilizerByConfig(explicitLandIds = [], options = {}) {
       });
       recordOperation('fertilize', organicCount);
     }
-  } else if (mode === 'smart' || mode === 'smart_only' || mode === 'smart_normal') {
-    // 智能施肥：寻找即将成熟的作物施肥
-    let fastMatureLands = [];
-    const smartSeconds = toNum(automation.fertilizer_smart_seconds) || 3600;
+  } else if (mode === 'smart' || mode === 'smart_only' || mode === 'smart_normal' ||
+      mode === 'final_normal' || mode === 'final_organic') {
+    // 智能/最终阶段施肥：寻找目标作物施肥
+    let targetFertilizerLands = [];
+    const isFinalStageMode = mode === 'final_normal' || mode === 'final_organic';
+    const explicitIdSet = new Set(explicitIds);
 
-    try {
-      const landsReply = await getAllLands();
-      fastMatureLands = getFastMatureLands(landsReply && landsReply.lands, smartSeconds);
-    } catch (err) {
-      if (!isTransientNetworkError(err)) {
-        logWarn('施肥', `获取全农场地块失败: ${err.message}`);
+    if (isFinalStageMode) {
+      targetFertilizerLands = getFinalStageLands(allLands, { organicOnly: mode === 'final_organic' });
+      if (explicitIdSet.size > 0) {
+        targetFertilizerLands = targetFertilizerLands.filter(id => explicitIdSet.has(id));
+      }
+    } else {
+      const smartSeconds = toNum(automation.fertilizer_smart_seconds) || 3600;
+
+      try {
+        const landsReply = await getAllLands();
+        targetFertilizerLands = getFastMatureLands(landsReply && landsReply.lands, smartSeconds);
+      } catch (err) {
+        if (!isTransientNetworkError(err)) {
+          logWarn('施肥', `获取全农场地块失败: ${err.message}`);
+        }
       }
     }
 
     if (landTypeMap.size > 0) {
-      fastMatureLands = filterLandIdsByTypes(fastMatureLands, landTypeMap, landTypes);
+      targetFertilizerLands = filterLandIdsByTypes(targetFertilizerLands, landTypeMap, landTypes);
     }
 
-    if (fastMatureLands.length > 0) {
-      const useOrganic = mode === 'smart' || mode === 'smart_only';
+    if (targetFertilizerLands.length > 0) {
+      const useOrganic = mode === 'smart' || mode === 'smart_only' || mode === 'final_organic';
       const typeLabel = useOrganic ? '有机' : '普通';
       const fertId = useOrganic ? ORGANIC_FERTILIZER_ID : NORMAL_FERTILIZER_ID;
+      const modeLabel = isFinalStageMode ? '最终阶段' : '快成熟';
 
       if (useOrganic) {
-        organicCount = await fertilizeOrganicLoop(fastMatureLands);
+        organicCount = await fertilizeOrganicLoop(targetFertilizerLands);
       } else {
-        normalCount = await fertilize(fastMatureLands, fertId);
+        normalCount = await fertilize(targetFertilizerLands, fertId);
       }
 
       const totalCount = useOrganic ? organicCount : normalCount;
       if (totalCount > 0) {
-        log('施肥', `${typeLabel}化肥快成熟施肥完成，共施 ${totalCount} 次（范围: ${landTypeLabels.join('、')}）`, {
+        log('施肥', `${typeLabel}化肥${modeLabel}施肥完成，共施 ${totalCount} 次（范围: ${landTypeLabels.join('、')}）`, {
           module: 'farm', event: '施肥', result: 'ok',
           type: useOrganic ? 'organic' : 'normal', count: totalCount
         });
