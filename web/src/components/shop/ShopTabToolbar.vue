@@ -44,18 +44,20 @@ function tabClasses(active: boolean) {
 </script>
 
 <template>
-  <div class="flex shrink-0 flex-wrap items-center gap-2">
-    <div class="h-9 inline-flex overflow-hidden border border-gray-200 rounded-lg bg-white p-0.5 dark:border-gray-700 dark:bg-gray-800">
-      <button
-        v-for="item in tabs"
-        :key="item.value"
-        class="min-w-20 rounded-md px-3 text-sm font-medium transition"
-        :class="tabClasses(tab === item.value)"
-        :style="tab === item.value ? { backgroundColor: 'var(--theme-primary)' } : {}"
-        @click="emit('update:tab', item.value)"
-      >
-        {{ item.label }}
-      </button>
+  <div class="min-w-0 w-full flex flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
+    <div class="max-w-full min-w-0 w-full flex-none overflow-x-auto pb-1 xl:w-auto">
+      <div class="h-9 min-w-max inline-flex overflow-hidden border border-gray-200 rounded-lg bg-white p-0.5 dark:border-gray-700 dark:bg-gray-800">
+        <button
+          v-for="item in tabs"
+          :key="item.value"
+          class="min-w-20 shrink-0 rounded-md px-3 text-sm font-medium transition"
+          :class="tabClasses(tab === item.value)"
+          :style="tab === item.value ? { backgroundColor: 'var(--theme-primary)' } : {}"
+          @click="emit('update:tab', item.value)"
+        >
+          {{ item.label }}
+        </button>
+      </div>
     </div>
 
     <BaseButton

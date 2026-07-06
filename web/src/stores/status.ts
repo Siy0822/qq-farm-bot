@@ -77,9 +77,14 @@ export const useStatusStore = defineStore('status', () => {
   }
 
   function shouldHideLogEntryInFrontend(entry: any) {
-    const tag = String(entry?.tag || '')
-    const msg = String(entry?.msg || '')
-    return tag === '系统' && /^ACE 上报成功：发送 \d+ 字节，回灌 \d+ 字节，耗时 \d+ms$/.test(msg)
+    const text = [
+      entry?.tag,
+      entry?.msg,
+      entry?.reason,
+      entry?.action,
+      entry?.meta ? JSON.stringify(entry.meta) : '',
+    ].filter(Boolean).join(' ')
+    return /\b(?:ACE|TSDK)\b/i.test(text)
   }
 
   function pushRealtimeLog(entry: any) {
@@ -93,6 +98,8 @@ export const useStatusStore = defineStore('status', () => {
 
   function pushRealtimeAccountLog(entry: any) {
     const next = (entry && typeof entry === 'object') ? entry : {}
+    if (shouldHideLogEntryInFrontend(next))
+      return
     accountLogs.value.push(next)
     if (accountLogs.value.length > 300)
       accountLogs.value = accountLogs.value.slice(-300)
@@ -143,8 +150,10 @@ export const useStatusStore = defineStore('status', () => {
     const body = (payload && typeof payload === 'object') ? payload : {}
     const list = Array.isArray(body.logs) ? body.logs : []
     accountLogs.value = currentRealtimeAccountId.value
-      ? list.filter((item: any) => String(item?.accountId || item?.id || '') === currentRealtimeAccountId.value)
-      : list
+      ? list
+          .filter((item: any) => String(item?.accountId || item?.id || '') === currentRealtimeAccountId.value)
+          .filter((item: any) => !shouldHideLogEntryInFrontend(item))
+      : list.filter((item: any) => !shouldHideLogEntryInFrontend(item))
   }
 
   function ensureRealtimeSocket() {
@@ -315,8 +324,10 @@ export const useStatusStore = defineStore('status', () => {
         if (requestedId && !isCurrentAccount(requestedId))
           return
         accountLogs.value = requestedId
-          ? res.data.filter((item: any) => String(item?.accountId || item?.id || '') === requestedId)
-          : res.data
+          ? res.data
+              .filter((item: any) => String(item?.accountId || item?.id || '') === requestedId)
+              .filter((item: any) => !shouldHideLogEntryInFrontend(item))
+          : res.data.filter((item: any) => !shouldHideLogEntryInFrontend(item))
       }
     }
     catch (e) {

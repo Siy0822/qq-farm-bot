@@ -372,6 +372,11 @@ async function refresh(forceReloadLogs = false) {
   await refreshBag()
 }
 
+function syncRealtimeAccount() {
+  if (currentAccountId.value)
+    statusStore.connectRealtime(currentAccountId.value)
+}
+
 function onLogFilterChange() {
   refresh(true)
 }
@@ -386,6 +391,7 @@ watch(currentAccountId, async (newId, oldId) => {
     bagStore.clearBag()
     resetDashboardState()
   }
+  syncRealtimeAccount()
   await refresh(true)
   scrollToBottom()
 })
@@ -453,6 +459,7 @@ function scrollToBottom() {
 
 onMounted(async () => {
   statusStore.setRealtimeLogsEnabled(!hasActiveLogFilter.value)
+  syncRealtimeAccount()
   await refresh()
   scrollToBottom()
 })

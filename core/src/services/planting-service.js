@@ -62,6 +62,16 @@ function getPlantSizeBySeedId(seedId) {
   return Math.max(1, toNum(plant && plant.size) || 1);
 }
 
+function isSeedLockedByLevel(seed, userLevel) {
+  const requiredLevel = Number(seed && seed.requiredLevel);
+  return Number.isFinite(requiredLevel) && requiredLevel > Number(userLevel || 0);
+}
+
+function isLockedPlantError(error) {
+  const message = String(error && error.message || error || '').toLowerCase();
+  return /锁定|未解锁|等级不足|level|lock|unlock/.test(message);
+}
+
 function groupKey(landIds) {
   return [...landIds].map(Number).sort((a, b) => a - b).join('-');
 }
@@ -259,10 +269,24 @@ async function plantPrioritized2x2Crops(emptyLandIds, lands, accountId) {
     });
     return { reservedLandIds: [], plantedMasterIds: [] };
   }
-  const size2Seeds = sortBagSeedsForPlanting(
+  const userState = getUserState();
+  const userLevel = Number(userState && userState.level) || 0;
+  const sortedSize2Seeds = sortBagSeedsForPlanting(
     bagSeeds.filter(seed => Number(seed?.count) > 0 && Number(seed?.plantSize) === 2),
     getBagSeedPriority(accountId)
   ).map(seed => ({ ...seed, count: Number(seed.count) || 0 }));
+  const lockedByLevelSeeds = sortedSize2Seeds.filter(seed => isSeedLockedByLevel(seed, userLevel));
+  const size2Seeds = sortedSize2Seeds.filter(seed => !isSeedLockedByLevel(seed, userLevel));
+
+  if (lockedByLevelSeeds.length > 0) {
+    log('种植', `已跳过当前等级未解锁的 2x2 背包种子: ${lockedByLevelSeeds.map(seed => seed.name || seed.seedId).join('，')}`, {
+      module: 'farm',
+      event: '种植2x2作物',
+      result: 'skip_locked',
+      seedIds: lockedByLevelSeeds.map(seed => seed.seedId),
+      userLevel,
+    });
+  }
 
   const totalSeedCount = size2Seeds.reduce((sum, seed) => sum + seed.count, 0);
   if (totalSeedCount <= 0) {
@@ -278,44 +302,89 @@ async function plantPrioritized2x2Crops(emptyLandIds, lands, accountId) {
     Math.min(totalSeedCount, groups.length),
     lands
   );
-  const reservedLandIds = [...new Set(reservations.flatMap(group => group.landIds))];
+  const reservedLandIdSet = new Set(reservations.flatMap(group => group.landIds));
   const emptySet = new Set((emptyLandIds || []).map(toNum).filter(Boolean));
   const readyGroups = reservations.filter(group => group.landIds.every(id => emptySet.has(id)));
   const plantedMasterIds = [];
-  let seedIndex = 0;
+
+  function release2x2Reservation(group) {
+    for (const landId of group.landIds) reservedLandIdSet.delete(landId);
+  }
+
+  function hasRetryBlocked2x2Seed(group) {
+    const now = Date.now();
+    return size2Seeds.some((seed) => {
+      if (Number(seed.count || 0) <= 0) return false;
+      const retryKey = `${group.key}:${seed.seedId}`;
+      const retryAt = failed2x2Retries.get(retryKey) || 0;
+      return retryAt > now;
+    });
+  }
+
+  function pickNext2x2Seed(group) {
+    const now = Date.now();
+    return size2Seeds.find((seed) => {
+      if (Number(seed.count || 0) <= 0) return false;
+      const retryKey = `${group.key}:${seed.seedId}`;
+      const retryAt = failed2x2Retries.get(retryKey) || 0;
+      return retryAt <= now;
+    }) || null;
+  }
 
   for (const group of readyGroups) {
-    while (seedIndex < size2Seeds.length && size2Seeds[seedIndex].count <= 0) seedIndex++;
-    const seed = size2Seeds[seedIndex];
-    if (!seed) break;
+    let seed = pickNext2x2Seed(group);
+    if (!seed && !hasRetryBlocked2x2Seed(group)) {
+      release2x2Reservation(group);
+      continue;
+    }
 
-    const retryKey = `${group.key}:${seed.seedId}`;
-    const retryAt = failed2x2Retries.get(retryKey) || 0;
-    if (retryAt > Date.now()) continue;
+    while (seed) {
+      const retryKey = `${group.key}:${seed.seedId}`;
+      try {
+        const result = await plant2x2Seed(seed.seedId, group);
+        failed2x2Retries.delete(retryKey);
+        seed.count -= 1;
+        plantedMasterIds.push(result.masterLandId);
+        result.occupiedLandIds.forEach(id => emptySet.delete(id));
+        log('种植', `已优先种植 2x2 作物 ${seed.name}，主地块#${result.masterLandId}，占地 ${result.occupiedLandIds.join(',')}`, {
+          module: 'farm',
+          event: '种植2x2作物',
+          result: 'ok',
+          seedId: seed.seedId,
+          masterLandId: result.masterLandId,
+          landIds: result.occupiedLandIds,
+        });
+        break;
+      } catch (err) {
+        if (isLockedPlantError(err)) {
+          seed.count = 0;
+          failed2x2Retries.delete(retryKey);
+          const nextSeed = pickNext2x2Seed(group);
+          logWarn('种植', nextSeed
+            ? `2x2 作物 ${seed.name} 当前不可种植，已切换其他 2x2 作物: ${err.message}`
+            : `2x2 作物 ${seed.name} 当前不可种植，且没有其他可切换的 2x2 作物: ${err.message}`, {
+            module: 'farm',
+            event: '种植2x2作物',
+            result: 'seed_locked',
+            seedId: seed.seedId,
+            landIds: group.landIds,
+          });
+          if (!nextSeed && !hasRetryBlocked2x2Seed(group))
+            release2x2Reservation(group);
+          seed = nextSeed;
+          continue;
+        }
 
-    try {
-      const result = await plant2x2Seed(seed.seedId, group);
-      failed2x2Retries.delete(retryKey);
-      seed.count -= 1;
-      plantedMasterIds.push(result.masterLandId);
-      result.occupiedLandIds.forEach(id => emptySet.delete(id));
-      log('种植', `已优先种植 2x2 作物 ${seed.name}，主地块#${result.masterLandId}，占地 ${result.occupiedLandIds.join(',')}`, {
-        module: 'farm',
-        event: '种植2x2作物',
-        result: 'ok',
-        seedId: seed.seedId,
-        masterLandId: result.masterLandId,
-        landIds: result.occupiedLandIds,
-      });
-    } catch (err) {
-      failed2x2Retries.set(retryKey, Date.now() + TWO_BY_TWO_RETRY_DELAY_MS);
-      logWarn('种植', `2x2 作物 ${seed.name} 种植失败: ${err.message}`, {
-        module: 'farm',
-        event: '种植2x2作物',
-        result: 'error',
-        seedId: seed.seedId,
-        landIds: group.landIds,
-      });
+        failed2x2Retries.set(retryKey, Date.now() + TWO_BY_TWO_RETRY_DELAY_MS);
+        logWarn('种植', `2x2 作物 ${seed.name} 种植失败: ${err.message}`, {
+          module: 'farm',
+          event: '种植2x2作物',
+          result: 'error',
+          seedId: seed.seedId,
+          landIds: group.landIds,
+        });
+        break;
+      }
     }
     await sleep(200, 400);
   }
@@ -339,7 +408,7 @@ async function plantPrioritized2x2Crops(emptyLandIds, lands, accountId) {
     last2x2WaitingSignature = '';
   }
 
-  return { reservedLandIds, plantedMasterIds };
+  return { reservedLandIds: [...reservedLandIdSet], plantedMasterIds };
 }
 
 // ─── 种植核心 ───
