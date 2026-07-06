@@ -141,6 +141,7 @@ const {
   strategyPreviewLabel,
   resetBagSeedPriority,
   moveBagSeed,
+  removeBagSeedPriority,
   startBagSeedDrag,
   dragOverBagSeed,
   dropBagSeed,
@@ -255,6 +256,7 @@ onMounted(async () => {
           :bag-seeds-error="bagSeedsError"
           @reset-bag-seed-priority="resetBagSeedPriority"
           @move-bag-seed="moveBagSeed"
+          @remove-bag-seed="removeBagSeedPriority"
           @start-bag-seed-drag="startBagSeedDrag"
           @drag-over-bag-seed="dragOverBagSeed"
           @drop-bag-seed="dropBagSeed"

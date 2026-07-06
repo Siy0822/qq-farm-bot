@@ -83,22 +83,22 @@ export function useStrategySettings({
 
   const sortedBagSeeds = computed(() => {
     const priority = localStrategySettings.value.bagSeedPriority || []
-    const indexMap = new Map<number, number>()
-    const orderedSeedIds = [
-      ...priority,
-      ...bagSeeds.value.map(seed => seed.seedId).filter(seedId => !priority.includes(seedId)),
-    ]
-    orderedSeedIds.forEach((seedId, index) => indexMap.set(seedId, index))
+    const seedMap = new Map(bagSeeds.value.map(seed => [Number(seed.seedId), seed]))
+    const orderedSeeds: BagSeedItem[] = []
+    const seen = new Set<number>()
 
-    return [...bagSeeds.value].sort((a, b) => {
-      const aIndex = indexMap.has(a.seedId) ? indexMap.get(a.seedId)! : Number.MAX_SAFE_INTEGER
-      const bIndex = indexMap.has(b.seedId) ? indexMap.get(b.seedId)! : Number.MAX_SAFE_INTEGER
-      if (aIndex !== bIndex)
-        return aIndex - bIndex
-      if (a.requiredLevel !== b.requiredLevel)
-        return b.requiredLevel - a.requiredLevel
-      return a.seedId - b.seedId
-    })
+    for (const rawSeedId of priority) {
+      const seedId = Number(rawSeedId)
+      if (!seedId || seen.has(seedId))
+        continue
+      const seed = seedMap.get(seedId)
+      if (!seed)
+        continue
+      seen.add(seedId)
+      orderedSeeds.push(seed)
+    }
+
+    return orderedSeeds
   })
 
   async function fetchBagSeeds() {
@@ -150,6 +150,11 @@ export function useStrategySettings({
     nextOrder[index] = nextOrder[targetIndex]!
     nextOrder[targetIndex] = temp
     localStrategySettings.value.bagSeedPriority = nextOrder
+  }
+
+  function removeBagSeedPriority(seedId: number) {
+    localStrategySettings.value.bagSeedPriority = getCurrentBagSeedOrder()
+      .filter(itemSeedId => itemSeedId !== Number(seedId))
   }
 
   function startBagSeedDrag(seedId: number, event: DragEvent) {
@@ -352,6 +357,7 @@ export function useStrategySettings({
     strategyPreviewLabel,
     resetBagSeedPriority,
     moveBagSeed,
+    removeBagSeedPriority,
     startBagSeedDrag,
     dragOverBagSeed,
     dropBagSeed,

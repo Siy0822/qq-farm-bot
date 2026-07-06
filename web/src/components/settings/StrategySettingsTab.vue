@@ -61,6 +61,7 @@ defineProps<{
 const emit = defineEmits<{
   resetBagSeedPriority: []
   moveBagSeed: [seedId: number, direction: -1 | 1]
+  removeBagSeed: [seedId: number]
   startBagSeedDrag: [seedId: number, event: DragEvent]
   dragOverBagSeed: [seedId: number, event: DragEvent]
   dropBagSeed: [seedId: number, event: DragEvent]
@@ -147,6 +148,7 @@ const settings = defineModel<StrategySettings>('settings', { required: true })
           :error="bagSeedsError"
           @reset="emit('resetBagSeedPriority')"
           @move="(seedId, direction) => emit('moveBagSeed', seedId, direction)"
+          @remove="seedId => emit('removeBagSeed', seedId)"
           @drag-start="(seedId, event) => emit('startBagSeedDrag', seedId, event)"
           @drag-over="(seedId, event) => emit('dragOverBagSeed', seedId, event)"
           @drop="(seedId, event) => emit('dropBagSeed', seedId, event)"

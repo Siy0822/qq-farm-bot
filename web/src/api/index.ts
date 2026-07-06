@@ -7,8 +7,17 @@ const accountIdRef = useStorage('current_account_id', '')
 
 const api = axios.create({
   baseURL: '/',
-  timeout: 10000,
+  timeout: 20000,
 })
+
+let lastNetworkToastAt = 0
+function showNetworkToast(message: string) {
+  const now = Date.now()
+  if (now - lastNetworkToastAt < 5000)
+    return
+  lastNetworkToastAt = now
+  useToastStore().error(message)
+}
 
 api.interceptors.request.use((config) => {
   const token = tokenRef.value
@@ -25,6 +34,10 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use((response) => {
   return response
 }, (error) => {
+  if (axios.isCancel(error) || error?.code === 'ERR_CANCELED') {
+    return Promise.reject(error)
+  }
+
   const toast = useToastStore()
 
   if (error.response) {
@@ -37,7 +50,7 @@ api.interceptors.response.use((response) => {
     }
     else if (error.response.status >= 500) {
       const backendError = String(error.response.data?.error || error.response.data?.message || '')
-      if (backendError === '账号未运行' || backendError === 'API Timeout') {
+      if (backendError === '账号未运行' || backendError === 'API Timeout' || backendError === 'Request Timeout') {
         return Promise.reject(error)
       }
       toast.error(`服务器错误 ${error.response.status} ${error.response.statusText}`)
@@ -47,7 +60,12 @@ api.interceptors.response.use((response) => {
     }
   }
   else if (error.request) {
-    toast.error('网络错误，无法连接到服务器')
+    if (error.code === 'ECONNABORTED') {
+      showNetworkToast('请求超时，请稍后重试')
+    }
+    else {
+      showNetworkToast('网络错误，无法连接到服务器')
+    }
   }
   else {
     toast.error(`错误: ${error.message}`)

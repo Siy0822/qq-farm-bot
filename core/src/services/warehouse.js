@@ -495,14 +495,12 @@ async function sellAllFruits() {
     const bag = await getBag();
     const items = getBagItems(bag);
     const fruits = [];
-    const fruitLabels = [];
 
     for (const item of items) {
       const id = toNum(item.id);
       const count = toNum(item.count);
       if (isFruitItemId(id) && count > 0) {
         fruits.push(item);
-        fruitLabels.push(`${getFruitName(id)  }x${  count}`);
       }
     }
 
@@ -515,6 +513,18 @@ async function sellAllFruits() {
     const prevGold = totalsBefore.gold;
     let totalGoldFromReply = 0;
     let derivedGold = prevGold;
+    const soldLabels = [];
+    let soldKindCount = 0;
+    let soldTotalCount = 0;
+    let skippedKindCount = 0;
+
+    function recordSoldFruit(item) {
+      const id = toNum(item.id);
+      const count = toNum(item.count);
+      soldLabels.push(`${getFruitName(id)  }x${  count}`);
+      soldKindCount += 1;
+      soldTotalCount += count;
+    }
 
     // 批量出售
     for (let i = 0; i < fruits.length; i += SELL_BATCH_SIZE) {
@@ -525,6 +535,7 @@ async function sellAllFruits() {
         const gain = Math.max(0, toNum(derived.gain));
         derivedGold = derived.nextKnownGold;
         if (gain > 0) totalGoldFromReply += gain;
+        batch.forEach(recordSoldFruit);
       } catch (err) {
         // 批量失败，逐个重试
         logWarn('仓库', `批量出售失败，改为逐个重试: ${err.message}`);
@@ -535,9 +546,11 @@ async function sellAllFruits() {
             const gain = Math.max(0, toNum(derived.gain));
             derivedGold = derived.nextKnownGold;
             if (gain > 0) totalGoldFromReply += gain;
+            recordSoldFruit(fruit);
           } catch (innerErr) {
             const fid = toNum(fruit.id);
             const fcount = toNum(fruit.count);
+            skippedKindCount += 1;
             logWarn('仓库', `跳过不可售物品: ID=${fid} x${fcount} (${innerErr.message})`, {
               module: 'warehouse', event: '跳过不可售物品', result: 'skip', itemId: fid, count: fcount,
             });
@@ -583,11 +596,28 @@ async function sellAllFruits() {
       }
     }
 
-    log('仓库', `出售 ${fruitLabels.join(', ')}${totalGoldGain > 0 ? `，获得 ${totalGoldGain} 金币` : ''}`, {
+    if (soldLabels.length === 0) {
+      logWarn('仓库', `本轮果实出售未成功${skippedKindCount > 0 ? `，已跳过 ${skippedKindCount} 个不可售物品` : ''}`, {
+        module: 'warehouse',
+        event: 'sell_done',
+        result: 'skipped',
+        count: 0,
+        skippedCount: skippedKindCount,
+        totalsBefore,
+        totalsAfter,
+        totalsDeltaGold: goldDelta,
+        totalsDeltaExp: expDelta,
+      });
+      return;
+    }
+
+    log('仓库', `出售 ${soldLabels.join(', ')}${skippedKindCount > 0 ? `，跳过 ${skippedKindCount} 个不可售物品` : ''}${totalGoldGain > 0 ? `，获得 ${totalGoldGain} 金币` : ''}`, {
       module: 'warehouse',
       event: totalGoldGain > 0 ? 'sell_success' : 'sell_done',
       result: totalGoldGain > 0 ? 'ok' : 'unknown_gain',
-      count: fruits.length,
+      count: soldKindCount,
+      soldCount: soldTotalCount,
+      skippedCount: skippedKindCount,
       gold: totalGoldGain,
       totalsBefore,
       totalsAfter,
@@ -596,8 +626,7 @@ async function sellAllFruits() {
     });
 
     if (totalGoldGain > 0) {
-      const totalCount = fruits.reduce((sum, f) => sum + (toNum(f.count) || 0), 0);
-      networkEvents.emit('sell', { gold: totalGoldGain, count: totalCount });
+      networkEvents.emit('sell', { gold: totalGoldGain, count: soldTotalCount });
     }
   } catch (err) {
     logWarn('仓库', `出售失败: ${err.message}`);

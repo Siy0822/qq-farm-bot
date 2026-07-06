@@ -17,6 +17,7 @@ defineProps<{
 const emit = defineEmits<{
   reset: []
   move: [seedId: number, direction: -1 | 1]
+  remove: [seedId: number]
   dragStart: [seedId: number, event: DragEvent]
   dragOver: [seedId: number, event: DragEvent]
   drop: [seedId: number, event: DragEvent]
@@ -51,6 +52,9 @@ const emit = defineEmits<{
     <div v-else-if="seeds.length === 0" class="py-4 text-center text-sm text-amber-700 dark:text-amber-300">
       背包中暂无种子
     </div>
+    <div v-else-if="sortedSeeds.length === 0" class="py-4 text-center text-sm text-amber-700 dark:text-amber-300">
+      优先列表为空，可重置顺序恢复背包种子。
+    </div>
     <div v-else class="grid gap-2 lg:grid-cols-3 sm:grid-cols-2">
       <div
         v-for="(seed, index) in sortedSeeds"
@@ -74,6 +78,14 @@ const emit = defineEmits<{
           </div>
         </div>
         <div class="flex shrink-0 flex-col gap-1">
+          <button
+            class="rounded p-1 text-gray-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
+            title="移出优先列表"
+            aria-label="移出优先列表"
+            @click="emit('remove', seed.seedId)"
+          >
+            <div class="i-carbon-close text-sm" />
+          </button>
           <button
             class="rounded p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700"
             :disabled="index === 0"

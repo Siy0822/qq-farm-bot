@@ -88,10 +88,10 @@ const PUBLIC_API_PATHS = new Set([
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 const ONE_MINUTE_MS = 60 * 1000;
 const LOG_SNAPSHOT_LIMIT = 100;
-const HTTP_REQUEST_TIMEOUT_MS = 15 * 1000;
+const HTTP_REQUEST_TIMEOUT_MS = 120 * 1000;
 const HTTP_HEADERS_TIMEOUT_MS = 16 * 1000;
-const HTTP_KEEP_ALIVE_TIMEOUT_MS = 1000;
-const HTTP_CONNECTION_IDLE_TIMEOUT_MS = 20 * 1000;
+const HTTP_KEEP_ALIVE_TIMEOUT_MS = 5 * 1000;
+const HTTP_CONNECTION_IDLE_TIMEOUT_MS = 30 * 1000;
 const HTTP_CLOSE_WAIT_SWEEP_MS = 5000;
 
 let app = null;
@@ -188,7 +188,8 @@ function registerRequestTimeoutGuard(expressApp) {
     if (req.path === "/api/health") return next();
 
     const timeout = setTimeout(() => {
-      if (res.headersSent) return;
+      if (res.headersSent || res.writableEnded || res.destroyed) return;
+      res.locals.requestTimedOut = true;
       res.status(503).json({
         ok: false,
         error: "Request Timeout",

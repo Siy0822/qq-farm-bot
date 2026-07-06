@@ -94,6 +94,9 @@ function createAdminRouteHelpers({ store, userStore, logger, getProvider }) {
   }
 
   function sendProviderError(res, err) {
+    if (res.headersSent || res.writableEnded || res.destroyed || res.locals?.requestTimedOut)
+      return;
+
     if (isExpectedProviderError(err)) {
       return res.json({
         ok: false,
