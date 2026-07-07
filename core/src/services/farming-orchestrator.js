@@ -149,11 +149,15 @@ async function runFarmOperation(opType) {
     const shouldRefresh2x2 = shouldRefresh2x2Plan && getPrioritize2x2Crops();
     if (deadLands.length > 0 || emptyLands.length > 0 || shouldRefresh2x2) {
       try {
-        const totalLands = deadLands.length + emptyLands.length;
-        await autoPlantEmptyLands(deadLands, emptyLands, lands);
-        if (totalLands > 0) {
-          actions.push(`种植${  totalLands}`);
-          recordOperation('plant', totalLands);
+        const plantResult = await autoPlantEmptyLands(deadLands, emptyLands, lands);
+        const removedCount = Number(plantResult && plantResult.removedCount) || 0;
+        const plantedCount = Number(plantResult && (plantResult.occupiedCount || plantResult.plantedCount)) || 0;
+        if (removedCount > 0) {
+          actions.push(`铲除${  removedCount}`);
+        }
+        if (plantedCount > 0) {
+          actions.push(`种植${  plantedCount}`);
+          recordOperation('plant', plantedCount);
         }
       } catch (err) {
         logWarn('种植', err.message);

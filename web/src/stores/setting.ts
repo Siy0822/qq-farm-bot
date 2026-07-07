@@ -132,9 +132,9 @@ function normalizeOfflineReminder(input: Partial<OfflineConfig> | null | undefin
 
 export const useSettingStore = defineStore('setting', () => {
   const settings = ref<SettingsState>({
-    plantingStrategy: 'bag_priority',
+    plantingStrategy: 'max_exp',
     preferredSeedId: 0,
-    prioritize2x2Crops: true,
+    prioritize2x2Crops: false,
     bagSeedPriority: [],
     bagSeedFallbackStrategy: 'level',
     autoAcceptFriendMinLevel: 0,
@@ -164,9 +164,9 @@ export const useSettingStore = defineStore('setting', () => {
 
   function clearSettingsState() {
     settings.value = {
-      plantingStrategy: 'bag_priority',
+      plantingStrategy: 'max_exp',
       preferredSeedId: 0,
-      prioritize2x2Crops: true,
+      prioritize2x2Crops: false,
       bagSeedPriority: [],
       bagSeedFallbackStrategy: 'level',
       autoAcceptFriendMinLevel: 0,
@@ -202,7 +202,7 @@ export const useSettingStore = defineStore('setting', () => {
         return
       if (data && data.ok && data.data) {
         const d = data.data
-        settings.value.plantingStrategy = d.plantingStrategy || d.strategy || 'bag_priority'
+        settings.value.plantingStrategy = d.plantingStrategy || d.strategy || 'max_exp'
         settings.value.preferredSeedId = d.preferredSeedId || d.preferredSeed || 0
         settings.value.prioritize2x2Crops = d.prioritize2x2Crops === true
         settings.value.intervals = d.intervals || {}

@@ -43,9 +43,9 @@ export function useStrategySettings({
   const strategySaving = ref(false)
 
   const localStrategySettings = ref({
-    plantingStrategy: 'bag_priority',
+    plantingStrategy: 'max_exp',
     preferredSeedId: 0,
-    prioritize2x2Crops: true,
+    prioritize2x2Crops: false,
     bagSeedPriority: [] as number[],
     bagSeedFallbackStrategy: 'level',
     stealDelaySeconds: 0,

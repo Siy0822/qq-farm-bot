@@ -248,9 +248,9 @@ const DEFAULT_ACCOUNT_CONFIG = {
         enabled: false,
         intervalMinutes: 60
     },
-    plantingStrategy: 'bag_priority',
+    plantingStrategy: 'max_exp',
     preferredSeedId: 0,
-    prioritize2x2Crops: true,
+    prioritize2x2Crops: false,
     friendBadRetryDate: '',
     intervals: DEFAULT_INTERVALS,
     friendQuietHours: DEFAULT_QUIET_HOURS,
@@ -452,7 +452,7 @@ function cloneAccountConfig(config = DEFAULT_ACCOUNT_CONFIG) {
         plantingStrategy: ALLOWED_PLANTING_STRATEGIES.includes(String(config.plantingStrategy || ''))
             ? String(config.plantingStrategy) : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
         preferredSeedId: Math.max(0, Number.parseInt(config.preferredSeedId, 10) || 0),
-        prioritize2x2Crops: config.prioritize2x2Crops !== false,
+        prioritize2x2Crops: config.prioritize2x2Crops === true,
         plantBlacklist: plantBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
         stealDelaySeconds: Math.max(0, Math.min(60, Number(config.stealDelaySeconds) || 1)),
         plantOrderRandom: !!config.plantOrderRandom,
