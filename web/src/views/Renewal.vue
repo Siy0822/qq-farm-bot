@@ -4,11 +4,16 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
-import { useUserStore } from '@/stores/user'
+import { formatTimeDuration, getCardQuotaValue, useUserStore } from '@/stores/user'
 
 interface CardInfo {
   type: 'time' | 'quota'
   days: number
+  value?: number
+  durationValue?: number
+  durationUnit?: 'hour' | 'day'
+  durationMs?: number | null
+  isPermanent?: boolean
   description: string
 }
 
@@ -52,9 +57,9 @@ const cardUsageSummary = computed(() => {
   if (!normalizedCardCode.value)
     return '等待输入卡密'
   if (cardInfo.value?.type === 'quota')
-    return `已识别为额度卡，预计增加 ${cardInfo.value.days} 个账号额度`
+    return `已识别为额度卡，预计增加 ${getCardQuotaValue(cardInfo.value)} 个账号额度`
   if (cardInfo.value?.type === 'time')
-    return cardInfo.value.days === -1 ? '已识别为永久时间卡' : `已识别为时间卡，预计增加 ${cardInfo.value.days} 天时长`
+    return `已识别为时间卡，预计增加 ${formatTimeDuration(cardInfo.value)} 时长`
   return normalizedCardCode.value.length >= 8 ? '卡密长度已满足常规输入习惯，建议先查询再提交' : '卡密看起来偏短，建议再次核对'
 })
 const pageSummary = computed(() => {
@@ -81,8 +86,8 @@ const cardValueLabel = computed(() => {
   if (!cardInfo.value)
     return '待查询'
   if (cardInfo.value.type === 'quota')
-    return `+${cardInfo.value.days} 个账号额度`
-  return cardInfo.value.days === -1 ? '永久有效' : `${cardInfo.value.days} 天`
+    return `+${getCardQuotaValue(cardInfo.value)} 个账号额度`
+  return formatTimeDuration(cardInfo.value)
 })
 
 watch(normalizedCardCode, (value, previousValue) => {
@@ -189,7 +194,7 @@ async function submitRenewal() {
     const cardType = data.data?.cardType || cardInfo.value?.type
     const card = data.data?.card
     success.value = cardType === 'quota'
-      ? `续费成功，账号额度已增加 ${cardInfo.value?.days ?? data.data?.days ?? ''}${cardInfo.value?.days ? ' 个' : ''}。`
+      ? `续费成功，账号额度已增加 ${cardInfo.value ? getCardQuotaValue(cardInfo.value) : data.data?.days ?? ''}${cardInfo.value ? ' 个' : ''}。`
       : `续费成功，有效期已更新至 ${card?.expiresAt ? new Date(card.expiresAt).toLocaleString('zh-CN') : '最新状态'}。`
 
     setTimeout(() => {

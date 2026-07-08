@@ -1,3 +1,4 @@
+import { formatCardValue } from '@/stores/user'
 import type { Card } from '@/stores/user'
 import { computed, ref } from 'vue'
 import api from '@/api'
@@ -10,6 +11,7 @@ export type CardTypeFilter = 'all' | 'time' | 'quota'
 export interface NewCardForm {
   description: string
   days: number
+  durationUnit: 'hour' | 'day'
   count: number
   type: 'time' | 'quota'
 }
@@ -31,11 +33,7 @@ export function getCardTypeLabel(card: Card) {
 }
 
 export function getCardValueLabel(card: Card) {
-  if (card.type === 'quota')
-    return `+${card.days}额度`
-  if (card.days === -1)
-    return '永久'
-  return `${card.days}天`
+  return formatCardValue(card)
 }
 
 function formatDateForFile(timestamp: number) {
@@ -53,6 +51,7 @@ export function useAdminCards(options: UseAdminCardsOptions) {
   const newCard = ref<NewCardForm>({
     description: '',
     days: 30,
+    durationUnit: 'day',
     count: 1,
     type: 'time',
   })
@@ -237,6 +236,14 @@ export function useAdminCards(options: UseAdminCardsOptions) {
       toast.warning('请输入卡密描述')
       return
     }
+    if (newCard.value.type === 'time' && newCard.value.days !== -1 && Number(newCard.value.days) <= 0) {
+      toast.warning('请输入大于 0 的时长，或输入 -1 创建永久卡')
+      return
+    }
+    if (newCard.value.type === 'quota' && Number(newCard.value.days) <= 0) {
+      toast.warning('请输入大于 0 的额度数量')
+      return
+    }
 
     showCreateCardConfirm.value = true
   }
@@ -246,6 +253,16 @@ export function useAdminCards(options: UseAdminCardsOptions) {
     if (!newCard.value.description) {
       createCardLoading.value = false
       toast.warning('请输入卡密描述')
+      return
+    }
+    if (newCard.value.type === 'time' && newCard.value.days !== -1 && Number(newCard.value.days) <= 0) {
+      createCardLoading.value = false
+      toast.warning('请输入大于 0 的时长，或输入 -1 创建永久卡')
+      return
+    }
+    if (newCard.value.type === 'quota' && Number(newCard.value.days) <= 0) {
+      createCardLoading.value = false
+      toast.warning('请输入大于 0 的额度数量')
       return
     }
 
@@ -259,6 +276,9 @@ export function useAdminCards(options: UseAdminCardsOptions) {
         newCard.value.type,
         {
           confirmed: true,
+          durationValue: newCard.value.type === 'time' ? newCard.value.days : undefined,
+          durationUnit: newCard.value.type === 'time' ? newCard.value.durationUnit : undefined,
+          value: newCard.value.type === 'quota' ? newCard.value.days : undefined,
         },
       )
       if (result.ok) {
@@ -271,7 +291,7 @@ export function useAdminCards(options: UseAdminCardsOptions) {
         }
         showCreateCardConfirm.value = false
         showCreateModal.value = false
-        newCard.value = { description: '', days: 30, count: 1, type: 'time' }
+        newCard.value = { description: '', days: 30, durationUnit: 'day', count: 1, type: 'time' }
         await fetchCards()
       }
       else {
@@ -456,7 +476,7 @@ export function useAdminCards(options: UseAdminCardsOptions) {
     }
 
     const content = cardsToExport.map(card =>
-      `卡密: ${card.code}\n描述: ${card.description}\n时长: ${getCardTypeLabel(card)}\n状态: ${card.enabled ? '启用' : '禁用'}\n${card.usedBy ? `使用者: ${card.usedBy}\n使用时间: ${formatCardDate(card.usedAt)}` : '未使用'}\n创建时间: ${formatCardDate(card.createdAt)}\n${'='.repeat(40)}`,
+      `卡密: ${card.code}\n描述: ${card.description}\n类型: ${getCardTypeLabel(card)}\n数值: ${getCardValueLabel(card)}\n状态: ${card.enabled ? '启用' : '禁用'}\n${card.usedBy ? `使用者: ${card.usedBy}\n使用时间: ${formatCardDate(card.usedAt)}` : '未使用'}\n创建时间: ${formatCardDate(card.createdAt)}\n${'='.repeat(40)}`,
     ).join('\n\n')
 
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })

@@ -13,6 +13,8 @@ const CARD_CLAIM_FILE = getDataFile('card-claim.json');
 // ==================== 常量 ====================
 
 const DEFAULT_ACCOUNT_LIMIT = 2;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 // 超级管理员（硬编码，无法通过数据库修改）
 const SUPER_ADMIN_USERNAME = 'jlbl1Iq9vT7t2gu1WbgB';
@@ -261,6 +263,80 @@ const generateCardCode = () => {
     return code;
 };
 
+function normalizeDurationUnit(unit) {
+    return unit === 'hour' ? 'hour' : 'day';
+}
+
+function toPositiveNumber(value, fallback = 1) {
+    const num = Number(value);
+    return Number.isFinite(num) && num > 0 ? num : fallback;
+}
+
+function getQuotaValue(card) {
+    return Math.max(Number.parseInt(card?.value ?? card?.days, 10) || 1, 1);
+}
+
+function normalizeTimeDuration(input = {}) {
+    const isPermanent = input.isPermanent === true
+        || Number(input.durationValue) === -1
+        || Number(input.days) === -1;
+
+    if (isPermanent) {
+        return {
+            days: -1,
+            durationValue: -1,
+            durationUnit: 'day',
+            durationMs: null,
+            isPermanent: true
+        };
+    }
+
+    if (Number.isFinite(Number(input.durationMs)) && Number(input.durationMs) > 0) {
+        const durationMs = Number(input.durationMs);
+        const durationUnit = normalizeDurationUnit(input.durationUnit);
+        const durationValue = Number.isFinite(Number(input.durationValue)) && Number(input.durationValue) > 0
+            ? Number(input.durationValue)
+            : durationMs / (durationUnit === 'hour' ? HOUR_MS : DAY_MS);
+        return {
+            days: durationMs / DAY_MS,
+            durationValue,
+            durationUnit,
+            durationMs,
+            isPermanent: false
+        };
+    }
+
+    const durationUnit = input.durationUnit ? normalizeDurationUnit(input.durationUnit) : 'day';
+    const rawValue = input.durationValue !== undefined ? input.durationValue : input.days;
+    const rawNumber = Number(rawValue);
+    const durationValue = input.allowZero === true && Number.isFinite(rawNumber) && rawNumber >= 0
+        ? rawNumber
+        : toPositiveNumber(rawValue, 1);
+    const durationMs = durationUnit === 'hour' ? durationValue * HOUR_MS : durationValue * DAY_MS;
+
+    return {
+        days: durationMs / DAY_MS,
+        durationValue,
+        durationUnit,
+        durationMs,
+        isPermanent: false
+    };
+}
+
+function assignDurationFields(target, duration) {
+    target.days = duration.days;
+    target.durationValue = duration.durationValue;
+    target.durationUnit = duration.durationUnit;
+    target.durationMs = duration.durationMs;
+    target.isPermanent = duration.isPermanent;
+}
+
+function normalizeCardForResponse(card) {
+    if (!card || card.type === 'quota') return card;
+    const duration = normalizeTimeDuration(card);
+    return { ...card, ...duration };
+}
+
 let users = [];
 let cards = [];
 
@@ -442,13 +518,14 @@ function registerUser(username, password, cardCode) {
 
     // 创建卡密记录
     const now = Date.now();
+    const duration = normalizeTimeDuration(card);
     const cardRecord = {
         code: card.code,
         description: card.description,
-        days: card.days,
-        expiresAt: card.days === -1 ? null : now + card.days * 86400000,
+        expiresAt: duration.isPermanent ? null : now + duration.durationMs,
         enabled: true
     };
+    assignDurationFields(cardRecord, duration);
 
     // 创建用户
     const newUser = {
@@ -499,9 +576,10 @@ function renewUser(username, cardCode) {
     if (cardType === 'quota') {
         // 额度卡密：增加账号限额
         const current = user.accountLimit || DEFAULT_ACCOUNT_LIMIT;
-        user.accountLimit = current + card.days;
+        user.accountLimit = current + getQuotaValue(card);
     } else {
         // 时间卡密
+        const duration = normalizeTimeDuration(card);
         if (!user.card) {
             user.card = {
                 code: card.code,
@@ -513,21 +591,25 @@ function renewUser(username, cardCode) {
         }
 
         const prevExpiresAt = user.card.expiresAt || 0;
-        const prevDays = user.card.days || 0;
+        const prevDuration = normalizeTimeDuration({ ...user.card, allowZero: true });
 
-        if (card.days === -1) {
+        if (duration.isPermanent) {
             // 永久卡
             user.card.expiresAt = null;
-            user.card.days = -1;
-        } else if (user.card.days === -1) {
+            assignDurationFields(user.card, duration);
+        } else if (prevDuration.isPermanent) {
             // 已经是永久，不需要叠加
             user.card.expiresAt = null;
         } else {
-            user.card.days = prevDays + card.days;
+            const totalDuration = normalizeTimeDuration({
+                durationMs: (prevDuration.durationMs || 0) + duration.durationMs,
+                durationUnit: ((prevDuration.durationMs || 0) + duration.durationMs) % DAY_MS === 0 ? 'day' : 'hour'
+            });
+            assignDurationFields(user.card, totalDuration);
             if (prevExpiresAt && prevExpiresAt > now) {
-                user.card.expiresAt = prevExpiresAt + card.days * 86400000;
+                user.card.expiresAt = prevExpiresAt + duration.durationMs;
             } else {
-                user.card.expiresAt = now + card.days * 86400000;
+                user.card.expiresAt = now + duration.durationMs;
             }
         }
     }
@@ -613,19 +695,25 @@ function editUser(username, updates) {
     // 设置永久/过期时间
     if (updates.isPermanent) {
         if (!user.card) user.card = {};
-        user.card.days = -1;
+        assignDurationFields(user.card, normalizeTimeDuration({ isPermanent: true }));
         user.card.expiresAt = null;
     } else if (updates.expiresAt !== undefined) {
         if (!user.card) user.card = {};
         if (updates.expiresAt === null) {
-            user.card.days = 0;
+            assignDurationFields(user.card, { days: 0, durationValue: 0, durationUnit: 'day', durationMs: 0, isPermanent: false });
             user.card.expiresAt = null;
         } else {
             const expiresAt = Number.parseInt(updates.expiresAt, 10);
             user.card.expiresAt = expiresAt;
             const remaining = expiresAt - Date.now();
-            const days = Math.ceil(remaining / 86400000);
-            user.card.days = days > 0 ? days : 0;
+            const durationMs = remaining > 0 ? remaining : 0;
+            const duration = durationMs > 0
+                ? normalizeTimeDuration({
+                    durationMs,
+                    durationUnit: durationMs % DAY_MS === 0 ? 'day' : 'hour'
+                })
+                : { days: 0, durationValue: 0, durationUnit: 'day', durationMs: 0, isPermanent: false };
+            assignDurationFields(user.card, duration);
         }
     }
 
@@ -645,44 +733,57 @@ function editUser(username, updates) {
 
 function getAllCards() {
     loadCards();
-    return cards;
+    return cards.map(normalizeCardForResponse);
 }
 
-function createCard(description, days, type = 'time') {
+function createCard(description, days, type = 'time', options = {}) {
     loadCards();
+    const cardType = type === 'quota' ? 'quota' : 'time';
     const card = {
         code: generateCardCode(),
         description,
-        days: Number.parseInt(days, 10) || 1,
-        type: type === 'quota' ? 'quota' : 'time',
+        type: cardType,
         enabled: true,
         usedBy: null,
         usedAt: null,
         createdAt: Date.now()
     };
+    if (cardType === 'quota') {
+        const value = getQuotaValue({ value: options.value, days });
+        card.days = value;
+        card.value = value;
+    } else {
+        assignDurationFields(card, normalizeTimeDuration({ ...options, days }));
+    }
     cards.push(card);
     saveCards();
     return card;
 }
 
-function createCardsBatch(description, days, count, type = 'time') {
+function createCardsBatch(description, days, count, type = 'time', options = {}) {
     loadCards();
     const created = [];
-    const daysNum = Number.parseInt(days, 10) || 1;
     const countNum = Math.min(Math.max(Number.parseInt(count, 10) || 1, 1), 100);
     const cardType = type === 'quota' ? 'quota' : 'time';
+    const quotaValue = getQuotaValue({ value: options.value, days });
+    const duration = normalizeTimeDuration({ ...options, days });
 
     for (let i = 0; i < countNum; i++) {
         const card = {
             code: generateCardCode(),
             description,
-            days: daysNum,
             type: cardType,
             enabled: true,
             usedBy: null,
             usedAt: null,
             createdAt: Date.now()
         };
+        if (cardType === 'quota') {
+            card.days = quotaValue;
+            card.value = quotaValue;
+        } else {
+            assignDurationFields(card, duration);
+        }
         cards.push(card);
         created.push(card);
     }
@@ -868,7 +969,7 @@ function claimCardByUA(ua, username = null) {
 
     // 随机选一张
     const randomIdx = Math.floor(Math.random() * availableCards.length);
-    const selectedCard = availableCards[randomIdx];
+    const selectedCard = normalizeCardForResponse(availableCards[randomIdx]);
 
     // 记录领取
     const uaHash = crypto.createHash('sha256').update(ua).digest('hex');
@@ -884,6 +985,10 @@ function claimCardByUA(ua, username = null) {
         ok: true,
         cardCode: selectedCard.code,
         days: selectedCard.days,
+        durationValue: selectedCard.durationValue,
+        durationUnit: selectedCard.durationUnit,
+        durationMs: selectedCard.durationMs,
+        isPermanent: selectedCard.isPermanent === true,
         description: selectedCard.description
     };
 }

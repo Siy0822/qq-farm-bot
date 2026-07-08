@@ -7,7 +7,7 @@ import PasswordStrengthMeter from '@/components/login/PasswordStrengthMeter.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import { getPasswordStrength } from '@/composables/usePasswordStrength'
-import { useUserStore } from '@/stores/user'
+import { formatTimeDuration, useUserStore } from '@/stores/user'
 
 declare const __APP_VERSION__: string
 
@@ -393,7 +393,7 @@ async function claimFreeCard() {
       claimModalContent.value = {
         success: true,
         title: '领取成功',
-        message: `成功领取 ${res.data.days} 天卡密！`,
+        message: `成功领取 ${formatTimeDuration(res.data)}卡密！`,
         cardCode: res.data.cardCode,
         days: res.data.days,
       }

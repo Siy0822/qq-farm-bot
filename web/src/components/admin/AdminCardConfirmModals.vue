@@ -80,7 +80,7 @@ function closeDeleteSelectedCardsConfirm() {
   <ConfirmModal
     :show="showCreateCardConfirm"
     title="确认创建卡密"
-    :message="`确定要创建${newCard.count > 1 ? `${newCard.count} 个` : ''}${newCard.type === 'quota' ? '额度' : '时间'}卡密吗？${newCard.count > 1 ? '批量创建后会立即生成并导出本批卡密。' : '创建后卡密将立即可用。'}`"
+    :message="`确定要创建${newCard.count > 1 ? `${newCard.count} 个` : ''}${newCard.type === 'quota' ? `额度卡密（+${newCard.days || 0}额度）` : `时间卡密（${newCard.days === -1 ? '永久' : `${newCard.days || 0}${newCard.durationUnit === 'hour' ? '小时' : '天'}`}）`}吗？${newCard.count > 1 ? '批量创建后会立即生成并导出本批卡密。' : '创建后卡密将立即可用。'}`"
     type="danger"
     :loading="createCardLoading"
     confirm-text="确认创建"

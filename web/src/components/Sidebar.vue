@@ -11,7 +11,8 @@ import { useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
 import { useShopStore } from '@/stores/shop'
 import { useStatusStore } from '@/stores/status'
-import { useUserStore } from '@/stores/user'
+import { formatTimeDuration, getCardQuotaValue, useUserStore } from '@/stores/user'
+import type { Card } from '@/stores/user'
 
 const accountStore = useAccountStore()
 const statusStore = useStatusStore()
@@ -188,7 +189,7 @@ const renewCardCode = ref('')
 const renewLoading = ref(false)
 const renewError = ref('')
 const renewSuccess = ref(false)
-const renewCardInfo = ref<{ type: string, days: number, description: string } | null>(null)
+const renewCardInfo = ref<(Partial<Card> & { type: string, days: number, description: string }) | null>(null)
 const renewChecking = ref(false)
 
 // 公告相关
@@ -275,10 +276,8 @@ function openRenewModal() {
   showUserDropdown.value = false
 }
 
-function getDaysLabel(days: number) {
-  if (days === -1)
-    return '永久'
-  return `${days}天`
+function getDurationLabel(card: Parameters<typeof formatTimeDuration>[0]) {
+  return formatTimeDuration(card)
 }
 
 // 公告相关函数
@@ -427,7 +426,7 @@ async function copyToken() {
                   {{ userStore.isAdmin ? '管理员' : '用户' }}
                 </span>
                 <span v-if="userStore.userCard" class="truncate text-xs text-gray-400">
-                  {{ getDaysLabel(userStore.userCard.days) }} {{ userStore.accountLimit }}额度
+                  {{ getDurationLabel(userStore.userCard) }} {{ userStore.accountLimit }}额度
                 </span>
               </div>
             </div>
@@ -452,7 +451,7 @@ async function copyToken() {
             </div>
             <div v-if="userStore.userCard" class="mt-1 text-xs">
               <span class="text-gray-500">时长:</span>
-              <span class="ml-1" :style="{ color: 'var(--theme-primary)' }">{{ getDaysLabel(userStore.userCard.days) }}</span>
+              <span class="ml-1" :style="{ color: 'var(--theme-primary)' }">{{ getDurationLabel(userStore.userCard) }}</span>
               <span class="ml-3 text-gray-500">剩余额度:</span>
               <span class="ml-1" :style="{ color: 'var(--theme-primary)' }">{{ userStore.accountLimit }}</span>
             </div>
@@ -662,7 +661,7 @@ async function copyToken() {
         </div>
         <div class="mt-1 flex items-center justify-between">
           <span class="text-sm text-gray-700 font-medium dark:text-gray-300">
-            时长: {{ getDaysLabel(userStore.userCard.days) }}
+            时长: {{ getDurationLabel(userStore.userCard) }}
           </span>
           <span class="text-sm text-gray-700 font-medium dark:text-gray-300">
             额度: {{ userStore.accountLimit }}个账号
@@ -723,16 +722,16 @@ async function copyToken() {
               {{ renewCardInfo.type === 'quota' ? '额度数量:' : '时长:' }}
             </span>
             <span class="text-sm text-gray-900 font-medium dark:text-white">
-              {{ renewCardInfo.type === 'quota' ? `+${renewCardInfo.days}个账号额度` : getDaysLabel(renewCardInfo.days) }}
+              {{ renewCardInfo.type === 'quota' ? `+${getCardQuotaValue(renewCardInfo)}个账号额度` : getDurationLabel(renewCardInfo) }}
             </span>
           </div>
         </div>
         <div class="mt-3 rounded bg-white/50 p-2 text-xs text-gray-600 dark:bg-gray-800/50 dark:text-gray-400">
           <template v-if="renewCardInfo.type === 'quota'">
-            使用后将增加 <span class="text-orange-600 font-medium">{{ renewCardInfo.days }}</span> 个账号额度
+            使用后将增加 <span class="text-orange-600 font-medium">{{ getCardQuotaValue(renewCardInfo) }}</span> 个账号额度
           </template>
           <template v-else>
-            使用后将增加 <span class="text-blue-600 font-medium">{{ renewCardInfo.days === -1 ? '永久' : `${renewCardInfo.days}天` }}</span> 使用时长
+            使用后将增加 <span class="text-blue-600 font-medium">{{ getDurationLabel(renewCardInfo) }}</span> 使用时长
           </template>
         </div>
       </div>

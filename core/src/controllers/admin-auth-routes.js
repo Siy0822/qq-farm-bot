@@ -154,6 +154,11 @@ function registerAdminAuthRoutes({
         data: {
           type: card.type || "time",
           days: card.days,
+          value: card.value,
+          durationValue: card.durationValue,
+          durationUnit: card.durationUnit,
+          durationMs: card.durationMs,
+          isPermanent: card.isPermanent === true || card.days === -1,
           description: card.description,
         },
       });

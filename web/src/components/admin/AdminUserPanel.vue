@@ -2,6 +2,7 @@
 import type { UserCard } from '@/stores/user'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import { formatTimeDuration } from '@/stores/user'
 
 interface UserInfo {
   username: string
@@ -51,12 +52,6 @@ function closeRenewUserModal() {
   showRenewUserModal.value = false
   pendingRenewUser.value = null
   renewUserCardCode.value = ''
-}
-
-function getDaysLabel(days: number) {
-  if (days === -1)
-    return '永久'
-  return `${days}天`
 }
 
 function isExpired(card: UserCard | null) {
@@ -199,7 +194,7 @@ function formatUserCardDate(timestamp: number | null) {
                 </span>
               </td>
               <td class="whitespace-nowrap px-3 py-2 text-sm text-gray-900 dark:text-white">
-                {{ user.card ? getDaysLabel(user.card.days) : '无' }}
+                {{ user.card ? formatTimeDuration(user.card) : '无' }}
               </td>
               <td class="whitespace-nowrap px-3 py-2 text-sm" :class="isExpired(user.card) ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'">
                 {{ formatUserCardDate(user.card?.expiresAt || null) }}

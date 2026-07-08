@@ -23,18 +23,31 @@ function registerAdminCardRoutes({
           : "CREATE_CARD";
       if (!requireDangerConfirmation(req, res, confirmation)) return;
 
-      const { description, days, type } = req.body || {};
-      if (!description || days === undefined) {
-        return res.status(400).json({ ok: false, error: "请提供描述和天数" });
+      const { description, days, type, durationValue, durationUnit, isPermanent, value } = req.body || {};
+      if (!description || (days === undefined && durationValue === undefined && value === undefined && !isPermanent)) {
+        return res.status(400).json({ ok: false, error: "请提供描述和时长" });
       }
 
       const cardType = type === "quota" ? "quota" : "time";
+      const permanentRequested =
+        isPermanent === true || Number(days) === -1 || Number(durationValue) === -1;
+      const requestedValue = Number(
+        cardType === "quota" ? value ?? days : durationValue ?? days,
+      );
+      if (cardType === "time" && !permanentRequested && (!Number.isFinite(requestedValue) || requestedValue <= 0)) {
+        return res.status(400).json({ ok: false, error: "时间卡时长必须大于 0，永久卡请使用 -1" });
+      }
+      if (cardType === "quota" && (!Number.isFinite(requestedValue) || requestedValue <= 0)) {
+        return res.status(400).json({ ok: false, error: "额度卡数量必须大于 0" });
+      }
+      const durationOptions = { durationValue, durationUnit, isPermanent, value };
       if (count && Number.parseInt(count, 10) > 1) {
         const cards = userStore.createCardsBatch(
           description,
           days,
           count,
           cardType,
+          durationOptions,
         );
         adminLogger.warn("批量创建卡密", {
           admin: req.currentUser?.username || "",
@@ -42,6 +55,9 @@ function registerAdminCardRoutes({
           count: cards.length,
           type: cardType,
           days: Number(days),
+          durationValue: durationValue === undefined ? null : Number(durationValue),
+          durationUnit: durationUnit || null,
+          isPermanent: isPermanent === true,
           confirmation: "CREATE_CARDS_BATCH",
         });
         return res.json({
@@ -52,12 +68,15 @@ function registerAdminCardRoutes({
         });
       }
 
-      const card = userStore.createCard(description, days, cardType);
+      const card = userStore.createCard(description, days, cardType, durationOptions);
       adminLogger.info("创建卡密", {
         admin: req.currentUser?.username || "",
         description: String(description || "").trim(),
         type: cardType,
         days: Number(days),
+        durationValue: durationValue === undefined ? null : Number(durationValue),
+        durationUnit: durationUnit || null,
+        isPermanent: isPermanent === true,
         code: card?.code || "",
         confirmation: "CREATE_CARD",
       });

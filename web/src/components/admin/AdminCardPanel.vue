@@ -3,6 +3,7 @@ import type { CardStatusFilter, CardTypeFilter, NewCardForm } from '@/composable
 import type { Card } from '@/stores/user'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 import { formatCardDate, getCardTypeLabel, getCardValueLabel } from '@/composables/useAdminCards'
 
@@ -43,6 +44,19 @@ const selectAll = defineModel<boolean>('selectAll', { required: true })
 const searchQuery = defineModel<string>('searchQuery', { required: true })
 const filterStatus = defineModel<CardStatusFilter>('filterStatus', { required: true })
 const cardTypeFilter = defineModel<CardTypeFilter>('cardTypeFilter', { required: true })
+
+const durationUnitOptions = [
+  { label: '小时', value: 'hour' },
+  { label: '天', value: 'day' },
+]
+
+const statusFilterOptions = [
+  { label: '全部状态', value: 'all' },
+  { label: '未使用', value: 'unused' },
+  { label: '已使用', value: 'used' },
+  { label: '已启用', value: 'enabled' },
+  { label: '已禁用', value: 'disabled' },
+]
 </script>
 
 <template>
@@ -190,28 +204,12 @@ const cardTypeFilter = defineModel<CardTypeFilter>('cardTypeFilter', { required:
             type="text"
             placeholder="搜索卡密、描述或使用者"
           />
-          <div class="flex flex-col gap-1.5">
-            <label class="text-sm text-gray-700 font-medium dark:text-gray-300">状态</label>
-            <select
+          <div>
+            <BaseSelect
               v-model="filterStatus"
-              class="h-10 border border-gray-300 rounded-lg bg-white px-3 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-            >
-              <option value="all">
-                全部状态
-              </option>
-              <option value="unused">
-                未使用
-              </option>
-              <option value="used">
-                已使用
-              </option>
-              <option value="enabled">
-                已启用
-              </option>
-              <option value="disabled">
-                已禁用
-              </option>
-            </select>
+              label="状态"
+              :options="statusFilterOptions"
+            />
           </div>
           <div class="rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-900/40 dark:text-gray-400">
             已命中 {{ filteredCards.length }} 条记录，可继续通过关键词快速缩小范围。
@@ -375,7 +373,7 @@ const cardTypeFilter = defineModel<CardTypeFilter>('cardTypeFilter', { required:
                 生效数值
               </div>
               <div class="mt-1 font-semibold">
-                {{ newCard.type === 'quota' ? `+${newCard.days || 0} 额度` : (newCard.days === -1 ? '永久' : `${newCard.days || 0} 天`) }}
+                {{ newCard.type === 'quota' ? `+${newCard.days || 0} 额度` : (newCard.days === -1 ? '永久' : `${newCard.days || 0} ${newCard.durationUnit === 'hour' ? '小时' : '天'}`) }}
               </div>
             </div>
             <div class="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:bg-gray-900/40 dark:text-gray-200">
@@ -429,13 +427,21 @@ const cardTypeFilter = defineModel<CardTypeFilter>('cardTypeFilter', { required:
             <div class="border border-gray-200 rounded-xl p-4 dark:border-gray-700">
               <BaseInput
                 v-model.number="newCard.days"
-                :label="newCard.type === 'quota' ? '额度数量' : '天数'"
+                :label="newCard.type === 'quota' ? '额度数量' : '时长数值'"
                 type="number"
-                :placeholder="newCard.type === 'quota' ? '可添加的账号数量' : '天数'"
+                :placeholder="newCard.type === 'quota' ? '可添加的账号数量' : '时长数值'"
               />
-              <p v-if="newCard.type === 'time'" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                输入 `-1` 表示永久，其他数字表示具体天数。
-              </p>
+              <div v-if="newCard.type === 'time'" class="mt-3">
+                <BaseSelect
+                  v-model="newCard.durationUnit"
+                  label="时长单位"
+                  :options="durationUnitOptions"
+                  :disabled="newCard.days === -1"
+                />
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  输入 `-1` 表示永久，其他数字会按所选单位生成时间卡。
+                </p>
+              </div>
               <p v-else class="mt-2 text-xs text-gray-500 dark:text-gray-400">
                 用户兑换后可新增的农场账号额度数量。
               </p>
