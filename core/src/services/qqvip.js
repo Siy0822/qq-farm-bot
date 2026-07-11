@@ -77,19 +77,23 @@ function isAlreadyClaimedError(err) {
 // ---- RPC 调用 ----
 
 async function getDailyGiftStatus() {
-  const request = types.GetDailyGiftStatusRequest.encode(
-    types.GetDailyGiftStatusRequest.create({})
+  const request = types.GetQQVipRewardsStatusRequest.encode(
+    types.GetQQVipRewardsStatusRequest.create({})
   ).finish();
-  const { body } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'GetDailyGiftStatus', request);
-  return types.GetDailyGiftStatusReply.decode(body);
+  const { body } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'GetQQVipRewardsStatus', request);
+  return types.GetQQVipRewardsStatusReply.decode(body);
 }
 
 async function claimDailyGift() {
-  const request = types.ClaimDailyGiftRequest.encode(
-    types.ClaimDailyGiftRequest.create({})
+  const request = types.ClaimQQVipRewardsRequest.encode(
+    types.ClaimQQVipRewardsRequest.create({ vip_types: [1, 2] })
   ).finish();
-  const { body } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'ClaimDailyGift', request);
-  return types.ClaimDailyGiftReply.decode(body);
+  const { body } = await sendMsgAsync(
+    'gamepb.qqvippb.QQVipService',
+    'ClaimQQVipRewards',
+    request
+  );
+  return types.ClaimQQVipRewardsReply.decode(body);
 }
 
 // ---- 主逻辑 ----

@@ -130,10 +130,10 @@ async function loadProto() {
     types.BuyMysteryShopReply = root.lookupType('gamepb.mysteryshoppb.BuyReply');
     types.AbandonMysteryShopRequest = root.lookupType('gamepb.mysteryshoppb.AbandonRequest');
     types.AbandonMysteryShopReply = root.lookupType('gamepb.mysteryshoppb.AbandonReply');
-    types.GetDailyGiftStatusRequest = root.lookupType('gamepb.qqvippb.GetDailyGiftStatusRequest');
-    types.GetDailyGiftStatusReply = root.lookupType('gamepb.qqvippb.GetDailyGiftStatusReply');
-    types.ClaimDailyGiftRequest = root.lookupType('gamepb.qqvippb.ClaimDailyGiftRequest');
-    types.ClaimDailyGiftReply = root.lookupType('gamepb.qqvippb.ClaimDailyGiftReply');
+    types.GetQQVipRewardsStatusRequest = root.lookupType('gamepb.qqvippb.GetQQVipRewardsStatusRequest');
+    types.GetQQVipRewardsStatusReply = root.lookupType('gamepb.qqvippb.GetQQVipRewardsStatusReply');
+    types.ClaimQQVipRewardsRequest = root.lookupType('gamepb.qqvippb.ClaimQQVipRewardsRequest');
+    types.ClaimQQVipRewardsReply = root.lookupType('gamepb.qqvippb.ClaimQQVipRewardsReply');
     types.CheckCanShareRequest = root.lookupType('gamepb.sharepb.CheckCanShareRequest');
     types.CheckCanShareReply = root.lookupType('gamepb.sharepb.CheckCanShareReply');
     types.ReportShareRequest = root.lookupType('gamepb.sharepb.ReportShareRequest');
