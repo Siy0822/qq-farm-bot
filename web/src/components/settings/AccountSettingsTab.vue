@@ -21,6 +21,7 @@ defineProps<{
   showClearStoppedConfirm: boolean
   clearStoppedLoading: boolean
   refreshWxCodesLoading: boolean
+  defaultPlanApplyingId: string
 }>()
 
 const emit = defineEmits<{
@@ -30,6 +31,7 @@ const emit = defineEmits<{
   select: [account: any]
   toggle: [account: any]
   settings: [account: any]
+  applyDefaultPlan: [account: any]
   edit: [account: any]
   delete: [account: any]
   saved: []
@@ -181,6 +183,17 @@ function accountAvatar(acc: any) {
           </div>
 
           <div class="flex flex-1 justify-end gap-1 sm:flex-initial sm:gap-2">
+            <BaseButton
+              :data-testid="`apply-default-plan-${acc.id}`"
+              variant="ghost"
+              class="min-h-[36px] min-w-[36px] !p-2"
+              :loading="defaultPlanApplyingId === String(acc.id)"
+              :disabled="!!defaultPlanApplyingId"
+              title="应用默认方案"
+              @click="emit('applyDefaultPlan', acc)"
+            >
+              <div v-if="defaultPlanApplyingId !== String(acc.id)" i-carbon-document-import />
+            </BaseButton>
             <BaseButton
               variant="ghost"
               class="min-h-[36px] min-w-[36px] !p-2"

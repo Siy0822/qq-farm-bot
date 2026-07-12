@@ -505,6 +505,7 @@ let accountFallbackConfig = (() => {
 const globalConfig = {
     accountConfigs: {},
     defaultAccountConfig: cloneAccountConfig(DEFAULT_ACCOUNT_CONFIG),
+    userDefaultAccountPlans: {},
     ui: { theme: 'light' },
     offlineReminder: { ...DEFAULT_OFFLINE_REMINDER },
     userOfflineReminders: {},
@@ -653,6 +654,39 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
     return cfg;
 }
 
+function pickDefaultPlanConfig(raw) {
+    const cfg = normalizeAccountConfig(raw, DEFAULT_ACCOUNT_CONFIG);
+    return {
+        automation: { ...cfg.automation },
+        autoCodeRefresh: { ...cfg.autoCodeRefresh },
+        plantingStrategy: cfg.plantingStrategy,
+        preferredSeedId: cfg.preferredSeedId,
+        prioritize2x2Crops: cfg.prioritize2x2Crops === true,
+        intervals: { ...cfg.intervals },
+        friendQuietHours: { ...cfg.friendQuietHours },
+        stealDelaySeconds: cfg.stealDelaySeconds,
+        plantOrderRandom: cfg.plantOrderRandom,
+        plantDelaySeconds: cfg.plantDelaySeconds,
+        fertilizerBuyOrganicCount: cfg.fertilizerBuyOrganicCount,
+        fertilizerBuyOrganicThresholdHours: cfg.fertilizerBuyOrganicThresholdHours,
+        fertilizerBuyNormalCount: cfg.fertilizerBuyNormalCount,
+        fertilizerBuyNormalThresholdHours: cfg.fertilizerBuyNormalThresholdHours,
+        fertilizerBuyCheckIntervalMinutes: cfg.fertilizerBuyCheckIntervalMinutes,
+        autoAcceptFriendMinLevel: cfg.autoAcceptFriendMinLevel,
+        bagSeedPriority: [...cfg.bagSeedPriority],
+        bagSeedFallbackStrategy: cfg.bagSeedFallbackStrategy
+    };
+}
+
+function normalizeUserDefaultPlan(raw) {
+    const input = raw && typeof raw === 'object' ? raw : {};
+    return {
+        enabled: input.enabled !== false,
+        config: pickDefaultPlanConfig(input.config),
+        updatedAt: Math.max(0, Number(input.updatedAt) || 0)
+    };
+}
+
 // ==================== 账号配置读写 ====================
 
 function getAccountConfigSnapshot(accountId) {
@@ -717,6 +751,15 @@ function loadGlobalConfig() {
         }
         for (const [key, val] of Object.entries(globalConfig.accountConfigs)) {
             globalConfig.accountConfigs[key] = normalizeAccountConfig(val, DEFAULT_ACCOUNT_CONFIG);
+        }
+
+        const rawPlans = data.userDefaultAccountPlans && typeof data.userDefaultAccountPlans === 'object'
+            ? data.userDefaultAccountPlans : {};
+        globalConfig.userDefaultAccountPlans = {};
+        for (const [key, val] of Object.entries(rawPlans)) {
+            const username = String(key || '').trim();
+            if (!username || !val) continue;
+            globalConfig.userDefaultAccountPlans[username] = normalizeUserDefaultPlan(val);
         }
 
         // UI 配置
@@ -878,6 +921,16 @@ function sanitizeGlobalConfigBeforeSave() {
         cleanConfigs[id] = normalizeAccountConfig(val, DEFAULT_ACCOUNT_CONFIG);
     }
     globalConfig.accountConfigs = cleanConfigs;
+
+    const rawPlans = globalConfig.userDefaultAccountPlans && typeof globalConfig.userDefaultAccountPlans === 'object'
+        ? globalConfig.userDefaultAccountPlans : {};
+    const cleanPlans = {};
+    for (const [key, val] of Object.entries(rawPlans)) {
+        const username = String(key || '').trim();
+        if (!username || !val) continue;
+        cleanPlans[username] = normalizeUserDefaultPlan(val);
+    }
+    globalConfig.userDefaultAccountPlans = cleanPlans;
 
     const rawReminders = globalConfig.userOfflineReminders && typeof globalConfig.userOfflineReminders === 'object'
         ? globalConfig.userOfflineReminders : {};
@@ -1310,6 +1363,7 @@ function normalizeAccountsData(data) {
 function addOrUpdateAccount(account) {
     const data = normalizeAccountsData(loadAccounts());
     let accountId = '';
+    let created = false;
     const nextAvatar = account.avatar || account.avatarUrl || account.avatar_url;
     const nextOpenId = account.openId || account.open_id;
 
@@ -1329,6 +1383,7 @@ function addOrUpdateAccount(account) {
         }
     } else {
         // 新建账号
+        created = true;
         const id = data.nextId++;
         accountId = String(id);
         data.accounts.push({
@@ -1350,7 +1405,15 @@ function addOrUpdateAccount(account) {
     }
 
     saveAccounts(data);
-    if (accountId) ensureAccountConfig(accountId);
+    if (accountId) {
+        const username = String(account.username || '').trim();
+        const plan = created && username ? globalConfig.userDefaultAccountPlans[username] : null;
+        if (plan && plan.enabled !== false) {
+            setAccountConfigSnapshot(accountId, plan.config);
+        } else {
+            ensureAccountConfig(accountId);
+        }
+    }
     return data;
 }
 
@@ -1400,6 +1463,45 @@ function deleteAccountsByUser(username) {
 function deleteUserConfig(username) {
     deleteUserOfflineReminder(username);
     deleteUserDeviceProtocol(username);
+    if (globalConfig.userDefaultAccountPlans && globalConfig.userDefaultAccountPlans[username]) {
+        delete globalConfig.userDefaultAccountPlans[username];
+        saveGlobalConfig();
+    }
+}
+
+function getUserDefaultAccountPlan(username) {
+    const key = String(username || '').trim();
+    const saved = key ? globalConfig.userDefaultAccountPlans[key] : null;
+    if (!saved) {
+        return {
+            exists: false,
+            enabled: true,
+            config: pickDefaultPlanConfig(DEFAULT_ACCOUNT_CONFIG),
+            updatedAt: 0
+        };
+    }
+    const plan = normalizeUserDefaultPlan(saved);
+    return { exists: true, ...plan };
+}
+
+function setUserDefaultAccountPlan(username, rawConfig, options = {}) {
+    const key = String(username || '').trim();
+    if (!key) throw new Error('Missing username');
+    const plan = {
+        enabled: options.enabled !== false,
+        config: pickDefaultPlanConfig(rawConfig),
+        updatedAt: Date.now()
+    };
+    globalConfig.userDefaultAccountPlans[key] = plan;
+    saveGlobalConfig();
+    return { exists: true, ...normalizeUserDefaultPlan(plan) };
+}
+
+function applyUserDefaultAccountPlan(username, accountId) {
+    const plan = getUserDefaultAccountPlan(username);
+    if (!plan.exists) throw new Error('尚未保存默认方案');
+    setAccountConfigSnapshot(accountId, plan.config);
+    return getConfigSnapshot(accountId);
 }
 
 function getDefaultAccountConfig() {
@@ -1721,6 +1823,9 @@ module.exports = {
     getAccountsByUser,
     deleteAccountsByUser,
     deleteUserConfig,
+    getUserDefaultAccountPlan,
+    setUserDefaultAccountPlan,
+    applyUserDefaultAccountPlan,
     getPlantBlacklist,
     setPlantBlacklist,
     getDefaultAccountConfig,

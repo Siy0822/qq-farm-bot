@@ -156,6 +156,102 @@ function registerAdminSettingsRoutes({
   canAccessAccount,
   requireDangerConfirmation,
 }) {
+  app.get("/api/settings/default-plan", (req, res) => {
+    try {
+      const currentUser = req.currentUser;
+      if (!currentUser) {
+        return res.status(401).json({ ok: false, error: "未登录" });
+      }
+      const data = store.getUserDefaultAccountPlan(currentUser.username);
+      res.json({ ok: true, data });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
+  app.put("/api/settings/default-plan", (req, res) => {
+    try {
+      const currentUser = req.currentUser;
+      if (!currentUser) {
+        return res.status(401).json({ ok: false, error: "未登录" });
+      }
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const data = store.setUserDefaultAccountPlan(
+        currentUser.username,
+        body.config || {},
+        { enabled: body.enabled !== false },
+      );
+      res.json({ ok: true, data });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
+  app.post("/api/settings/default-plan/import", (req, res) => {
+    const accountId = requireAccountAccess(req, res, {
+      getAccountIdFromRequest,
+      canAccessAccount,
+    });
+    if (!accountId) return;
+
+    try {
+      const currentUser = req.currentUser;
+      const currentPlan = store.getUserDefaultAccountPlan(currentUser.username);
+      const config = store.getConfigSnapshot(accountId);
+      const data = store.setUserDefaultAccountPlan(
+        currentUser.username,
+        config,
+        { enabled: currentPlan.enabled !== false },
+      );
+      res.json({ ok: true, data });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
+  app.post("/api/settings/default-plan/apply", async (req, res) => {
+    const accountId = requireAccountAccess(req, res, {
+      getAccountIdFromRequest,
+      canAccessAccount,
+    });
+    if (!accountId) return;
+
+    try {
+      const currentUser = req.currentUser;
+      const data = store.applyUserDefaultAccountPlan(
+        currentUser.username,
+        accountId,
+      );
+      if (provider && typeof provider.saveSettings === "function") {
+        await provider.saveSettings(accountId, data);
+      } else if (provider && typeof provider.broadcastConfig === "function") {
+        provider.broadcastConfig(accountId);
+      }
+      res.json({ ok: true, data });
+    } catch (error) {
+      const status = error.message === "尚未保存默认方案" ? 400 : 500;
+      res.status(status).json({ ok: false, error: error.message });
+    }
+  });
+
+  app.post("/api/settings/default-plan/reset", (req, res) => {
+    try {
+      const currentUser = req.currentUser;
+      if (!currentUser) {
+        return res.status(401).json({ ok: false, error: "未登录" });
+      }
+      const currentPlan = store.getUserDefaultAccountPlan(currentUser.username);
+      const data = store.setUserDefaultAccountPlan(
+        currentUser.username,
+        store.getDefaultAccountConfig(),
+        { enabled: currentPlan.enabled !== false },
+      );
+      res.json({ ok: true, data });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
   app.post("/api/settings/save", async (req, res) => {
     const accountId = requireAccountAccess(req, res, {
       getAccountIdFromRequest,

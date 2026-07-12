@@ -10,6 +10,7 @@ const {
   isCompleteQqFriendSource,
   mergeKnownFriendGids,
   normalizeApiBase,
+  scheduleCapturedAccountStart,
 } = require('../src/controllers/admin-capture-routes');
 
 test('normalizeApiBase accepts http(s) and removes trailing slashes', () => {
@@ -119,7 +120,7 @@ test('addCapturedValues finds non-empty code and accumulates friend gids', () =>
 test('QQ friend gids continue syncing after the account is added', async () => {
   const saved = [];
   const broadcasts = [];
-  let stopped = false;
+  const lifecycle = [];
   const flow = {
     id: 'flow-1',
     owner: 'admin',
@@ -149,26 +150,82 @@ test('QQ friend gids continue syncing after the account is added', async () => {
       targetFlow.friendListComplete = true;
     },
     stop: async () => {
-      stopped = true;
+      lifecycle.push('stop');
     },
+    afterStop: async () => lifecycle.push('start'),
   });
 
   assert.equal(imported, 1);
   assert.deepEqual(saved, [{ accountId: 'account-1', gids: [10001, 10002] }]);
   assert.deepEqual(broadcasts, ['account-1']);
   assert.equal(flow.result.importedFriendCount, 1);
-  assert.equal(stopped, true);
+  assert.deepEqual(lifecycle, ['stop', 'start']);
+});
+
+test('captured accounts start after the post-proxy delay', () => {
+  const calls = [];
+  let scheduledCallback = null;
+  const flow = { owner: 'admin', result: { startError: '' } };
+
+  scheduleCapturedAccountStart({
+    provider: { startAccount: accountId => calls.push(accountId) },
+    logger: { warn() {} },
+    flow,
+    account: { id: 'account-1' },
+    isUpdate: false,
+    wasRunning: false,
+    schedule: (callback, delayMs) => {
+      scheduledCallback = callback;
+      calls.push(delayMs);
+      return null;
+    },
+  });
+
+  assert.deepEqual(calls, [1500]);
+  scheduledCallback();
+  assert.deepEqual(calls, [1500, 'account-1']);
 });
 
 test('complete QQ friend list sources are recognized', () => {
   assert.equal(isCompleteQqFriendSource('gamepb.friendpb.FriendService.GetAll'), true);
   assert.equal(isCompleteQqFriendSource('gamepb.friendpb.FriendService.SyncAll'), true);
+  assert.equal(isCompleteQqFriendSource('gamepb.friendpb.FriendService.GetGameFriends'), false);
   assert.equal(isCompleteQqFriendSource('gamepb.visitpb.VisitService.Enter'), false);
+});
+
+test('GetGameFriends batches accumulate without marking the list complete', () => {
+  const flow = {
+    platform: 'qq',
+    friendGids: new Set(),
+    publicInfo: {},
+    proxy: {},
+  };
+
+  addCapturedValues(flow, {
+    data: {
+      friends: {
+        source: 'gamepb.friendpb.FriendService.GetGameFriends',
+        items: [{ gid: '10001' }, { gid: '10002' }],
+      },
+    },
+  });
+  addCapturedValues(flow, {
+    data: {
+      friends: {
+        source: 'gamepb.friendpb.FriendService.GetGameFriends',
+        items: [{ gid: '10003' }],
+      },
+    },
+  });
+
+  assert.deepEqual([...flow.friendGids], [10001, 10002, 10003]);
+  assert.notEqual(flow.friendListComplete, true);
 });
 
 test('QQ friend collection does not write into a reused account id', async () => {
   let saved = false;
   let stopped = false;
+  let started = false;
   const imported = await collectQqFriendGids({
     store: {
       getAccounts: () => ({ accounts: [{ id: 'account-1', createdAt: 456 }] }),
@@ -190,9 +247,13 @@ test('QQ friend collection does not write into a reused account id', async () =>
     stop: async () => {
       stopped = true;
     },
+    afterStop: async () => {
+      started = true;
+    },
   });
 
   assert.equal(imported, 0);
   assert.equal(saved, false);
   assert.equal(stopped, true);
+  assert.equal(started, false);
 });

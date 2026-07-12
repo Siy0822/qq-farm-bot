@@ -38,7 +38,7 @@ interface AutoCodeRefreshConfig {
   intervalMinutes: number
 }
 
-defineProps<{
+withDefaults(defineProps<{
   currentAccountName: string | null
   currentAccountId: string | number | null | undefined
   loading: boolean
@@ -46,7 +46,14 @@ defineProps<{
   autoCodeRefreshing: boolean
   fertilizerLandTypeOptions: { label: string, value: string }[]
   fertilizerOptions: { label: string, value: string | number }[]
-}>()
+  title?: string
+  saveLabel?: string
+  showRunAutoCodeRefresh?: boolean
+}>(), {
+  title: '自动控制',
+  saveLabel: '保存自动控制',
+  showRunAutoCodeRefresh: true,
+})
 
 const emit = defineEmits<{
   save: []
@@ -65,7 +72,7 @@ function isFastMatureFertilizerMode(mode: string) {
   <div class="space-y-4">
     <div class="flex items-center justify-between">
       <h3 class="text-lg text-gray-900 font-bold dark:text-gray-100">
-        自动控制
+        {{ title }}
         <span v-if="currentAccountName" class="ml-2 text-sm text-gray-500 font-normal dark:text-gray-400">
           ({{ currentAccountName }})
         </span>
@@ -126,6 +133,7 @@ function isFastMatureFertilizerMode(mode: string) {
               placeholder="60"
             />
             <BaseButton
+              v-if="showRunAutoCodeRefresh"
               variant="secondary"
               size="sm"
               class="h-9 whitespace-nowrap"
@@ -287,7 +295,7 @@ function isFastMatureFertilizerMode(mode: string) {
           :loading="saving"
           @click="emit('save')"
         >
-          保存自动控制
+          {{ saveLabel }}
         </BaseButton>
       </div>
     </div>

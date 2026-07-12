@@ -43,7 +43,7 @@ interface StrategySettings {
   }
 }
 
-defineProps<{
+withDefaults(defineProps<{
   currentAccountName: string | null
   currentAccountId: string | number | null | undefined
   loading: boolean
@@ -56,7 +56,12 @@ defineProps<{
   sortedBagSeeds: BagSeedItem[]
   bagSeedsLoading: boolean
   bagSeedsError: string | null
-}>()
+  title?: string
+  saveLabel?: string
+}>(), {
+  title: '策略设置',
+  saveLabel: '保存策略设置',
+})
 
 const emit = defineEmits<{
   resetBagSeedPriority: []
@@ -76,7 +81,7 @@ const settings = defineModel<StrategySettings>('settings', { required: true })
     <div class="flex items-center justify-between">
       <h3 class="flex items-center gap-2 text-lg text-gray-900 font-bold dark:text-gray-100">
         <div class="i-fas-cog text-lg" />
-        策略设置
+        {{ title }}
         <span v-if="currentAccountName" class="ml-2 text-sm text-gray-500 font-normal dark:text-gray-400">
           ({{ currentAccountName }})
         </span>
@@ -164,7 +169,7 @@ const settings = defineModel<StrategySettings>('settings', { required: true })
           :loading="saving"
           @click="emit('save')"
         >
-          保存策略设置
+          {{ saveLabel }}
         </BaseButton>
       </div>
     </div>

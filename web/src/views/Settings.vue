@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
+import api from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import AccountSettingsTab from '@/components/settings/AccountSettingsTab.vue'
 import AutomationSettingsTab from '@/components/settings/AutomationSettingsTab.vue'
+import DefaultPlanSettingsTab from '@/components/settings/DefaultPlanSettingsTab.vue'
 import StrategySettingsTab from '@/components/settings/StrategySettingsTab.vue'
 import UserSettingsTab from '@/components/settings/UserSettingsTab.vue'
 import { useAccountSettings } from '@/composables/settings/useAccountSettings'
@@ -13,29 +15,39 @@ import { useSettingStore } from '@/stores/setting'
 
 const settingStore = useSettingStore()
 
-type SettingsTabKey = 'account' | 'strategy' | 'automation' | 'user'
+type SettingsTabKey = 'account' | 'strategy' | 'automation' | 'default-plan' | 'user'
 
 function getInitialSettingsTab(): SettingsTabKey {
   const saved = localStorage.getItem('settings-active-tab')
-  return saved === 'strategy' || saved === 'automation' || saved === 'user'
+  return saved === 'strategy' || saved === 'automation' || saved === 'default-plan' || saved === 'user'
     ? saved
     : 'account'
 }
 
 const activeTab = ref<SettingsTabKey>(getInitialSettingsTab())
+const settingsTabsNav = ref<HTMLElement | null>(null)
+
+async function scrollActiveTabIntoView() {
+  await nextTick()
+  const button = settingsTabsNav.value?.querySelector<HTMLElement>(`[data-settings-tab="${activeTab.value}"]`)
+  button?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+}
 
 watch(activeTab, (newTab) => {
   localStorage.setItem('settings-active-tab', newTab)
+  void scrollActiveTabIntoView()
 })
 
 const tabs = [
   { key: 'account', label: '账号管理', icon: 'i-carbon-user-settings' },
   { key: 'strategy', label: '策略设置', icon: 'i-fas-cogs' },
   { key: 'automation', label: '自动控制', icon: 'i-carbon-toggle-on' },
+  { key: 'default-plan', label: '默认方案', icon: 'i-carbon-settings-adjust' },
   { key: 'user', label: '用户管理', icon: 'i-carbon-user' },
 ] as const
 
 const modalVisible = ref(false)
+const defaultPlanApplyingId = ref('')
 const modalConfig = ref({
   title: '',
   message: '',
@@ -154,6 +166,33 @@ const {
   showAlert,
 })
 
+async function applyDefaultPlan(account: any) {
+  if (!account?.id || defaultPlanApplyingId.value)
+    return
+  const accountId = String(account.id)
+  defaultPlanApplyingId.value = accountId
+  try {
+    const { data } = await api.post('/api/settings/default-plan/apply', {}, {
+      headers: { 'x-account-id': accountId },
+    })
+    if (!data?.ok)
+      throw new Error(data?.error || '应用失败')
+    if (String(currentAccountId.value || '') === accountId) {
+      settingStore.clearSettingsState()
+      resetStrategyState()
+      await loadStrategyData()
+      syncLocalAutomationSettings()
+    }
+    showAlert(`已将默认方案应用到 ${account.name || account.id}`)
+  }
+  catch (error: any) {
+    showAlert(error.response?.data?.error || error.message || '应用默认方案失败', 'danger')
+  }
+  finally {
+    defaultPlanApplyingId.value = ''
+  }
+}
+
 watch(currentAccountId, async () => {
   settingStore.clearSettingsState()
   resetStrategyState()
@@ -173,6 +212,7 @@ onMounted(async () => {
     syncLocalAutomationSettings()
     syncLocalOfflineSettings()
   }
+  await scrollActiveTabIntoView()
 })
 </script>
 
@@ -186,11 +226,12 @@ onMounted(async () => {
 
     <div class="border border-gray-200 rounded-lg bg-white shadow dark:border-gray-700 dark:bg-gray-800">
       <div class="border-b border-gray-200 dark:border-gray-700">
-        <nav class="flex gap-1 p-2">
+        <nav ref="settingsTabsNav" class="flex gap-1 overflow-x-auto p-2">
           <button
             v-for="tab in tabs"
             :key="tab.key"
-            class="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all"
+            :data-settings-tab="tab.key"
+            class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all"
             :class="activeTab === tab.key
               ? 'text-white shadow-sm'
               : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'"
@@ -223,12 +264,14 @@ onMounted(async () => {
           :show-clear-stopped-confirm="showClearStoppedConfirm"
           :clear-stopped-loading="clearStoppedLoading"
           :refresh-wx-codes-loading="refreshWxCodesLoading"
+          :default-plan-applying-id="defaultPlanApplyingId"
           @add="openAddModal"
           @clear-stopped="openClearStoppedConfirm"
           @refresh-wx-codes="refreshWxCodesNow"
           @select="selectAccount"
           @toggle="toggleAccount"
           @settings="openSettings"
+          @apply-default-plan="applyDefaultPlan"
           @edit="openEditModal"
           @delete="handleDelete"
           @saved="handleSaved"
@@ -277,6 +320,21 @@ onMounted(async () => {
           :fertilizer-options="fertilizerOptions"
           @run-auto-code-refresh="runAutoCodeRefreshNow"
           @save="saveAutomationSettings"
+        />
+
+        <DefaultPlanSettingsTab
+          v-else-if="activeTab === 'default-plan'"
+          :current-account-id="currentAccountId"
+          :current-account-name="currentAccountName"
+          :planting-strategy-options="plantingStrategyOptions"
+          :preferred-seed-options="preferredSeedOptions"
+          :bag-fallback-strategy-options="bagFallbackStrategyOptions"
+          :bag-seeds="bagSeeds"
+          :bag-seeds-loading="bagSeedsLoading"
+          :bag-seeds-error="bagSeedsError"
+          :fertilizer-land-type-options="fertilizerLandTypeOptions"
+          :fertilizer-options="fertilizerOptions"
+          @notify="showAlert"
         />
 
         <UserSettingsTab

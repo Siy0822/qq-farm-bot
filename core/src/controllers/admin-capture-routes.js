@@ -5,10 +5,10 @@ const CAPTURE_REQUEST_TIMEOUT_MS = 15_000;
 const CAPTURE_FLOW_TTL_MS = 15 * 60 * 1000;
 const QQ_FRIEND_COLLECTION_MAX_MS = 15_000;
 const QQ_FRIEND_COLLECTION_POLL_MS = 1500;
+const CAPTURE_ACCOUNT_START_DELAY_MS = 1500;
 const COMPLETE_QQ_FRIEND_SOURCES = new Set([
   "gamepb.friendpb.FriendService.GetAll",
   "gamepb.friendpb.FriendService.SyncAll",
-  "gamepb.friendpb.FriendService.GetGameFriends",
 ]);
 const captureFlows = new Map();
 
@@ -223,18 +223,48 @@ function serializeFlow(flow) {
 }
 
 async function stopRemoteFlow(store, flow) {
-  try {
-    const config = resolveCaptureConfig(store);
-    await captureRequest(config, "/api/capture/stop", {
-      method: "POST",
-      sessionId: flow.remoteSessionId,
-      body: {},
-    });
-  } catch {}
+  const config = resolveCaptureConfig(store);
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await captureRequest(
+        config,
+        `/api/sessions/${encodeURIComponent(flow.remoteSessionId)}`,
+        { method: "DELETE", sessionId: flow.remoteSessionId },
+      );
+      return true;
+    } catch (error) {
+      lastError = error;
+    }
+
+    try {
+      await captureRequest(config, "/api/capture/stop", {
+        method: "POST",
+        sessionId: flow.remoteSessionId,
+        body: {},
+      });
+      return true;
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (attempt < 3) await waitForNextCollectionPoll(attempt * 500);
+  }
+  throw lastError || new Error("抓包服务代理释放失败");
 }
 
-function scheduleRemoteStop(store, flow, delayMs = 5000) {
-  const timer = setTimeout(() => stopRemoteFlow(store, flow), delayMs);
+function scheduleRemoteStop(store, flow, delayMs = 5000, logger = null) {
+  const timer = setTimeout(() => {
+    void stopRemoteFlow(store, flow).catch((error) => {
+      if (logger) {
+        logger.warn("抓包服务代理释放失败", {
+          owner: flow.owner,
+          remoteSessionId: flow.remoteSessionId,
+          error: error.message,
+        });
+      }
+    });
+  }, delayMs);
   if (typeof timer.unref === "function") timer.unref();
 }
 
@@ -258,6 +288,7 @@ async function collectQqFriendGids({
   now = Date.now,
   maxWaitMs = QQ_FRIEND_COLLECTION_MAX_MS,
   pollMs = QQ_FRIEND_COLLECTION_POLL_MS,
+  afterStop,
 }) {
   const deadline = now() + maxWaitMs;
   let lastRefreshError = null;
@@ -311,6 +342,13 @@ async function collectQqFriendGids({
   } finally {
     await stop(store, flow);
     if (captureFlows.get(flow.id) === flow) captureFlows.delete(flow.id);
+    if (
+      typeof afterStop === "function"
+      && !flow.cancelled
+      && isSameAccountInstance(store, accountId, accountCreatedAt)
+    ) {
+      await afterStop();
+    }
   }
 }
 
@@ -325,6 +363,43 @@ function scheduleQqFriendCollection(options) {
       error: error.message,
     });
   });
+}
+
+function scheduleCapturedAccountStart({
+  provider,
+  logger,
+  flow,
+  account,
+  isUpdate,
+  wasRunning,
+  delayMs = CAPTURE_ACCOUNT_START_DELAY_MS,
+  schedule = setTimeout,
+}) {
+  const timer = schedule(() => {
+    try {
+      if (isUpdate) {
+        if (wasRunning) provider.restartAccount(account.id);
+      } else {
+        provider.startAccount(account.id);
+      }
+    } catch (error) {
+      const startError = error.message || "账号启动失败";
+      if (flow.result) flow.result.startError = startError;
+      logger.warn("代理抓取账号已添加，但延迟启动失败", {
+        owner: flow.owner,
+        accountId: account.id,
+        error: startError,
+      });
+    }
+  }, delayMs);
+  if (timer && typeof timer.unref === "function") timer.unref();
+  return timer;
+}
+
+async function stopCaptureBeforeAccountStart(store, flow, start) {
+  await stopRemoteFlow(store, flow);
+  if (captureFlows.get(flow.id) === flow) captureFlows.delete(flow.id);
+  start();
 }
 
 async function removeExistingOwnerFlows(store, owner) {
@@ -357,7 +432,11 @@ function registerAdminCaptureRoutes({
   canAccessAccount,
   resolveAccountReference,
 }) {
-  const cleanupTimer = setInterval(() => cleanupExpiredFlows(store), 60_000);
+  const cleanupTimer = setInterval(() => {
+    void cleanupExpiredFlows(store).catch((error) => {
+      logger.warn("过期抓包任务清理失败", { error: error.message });
+    });
+  }, 60_000);
   if (typeof cleanupTimer.unref === "function") cleanupTimer.unref();
 
   app.get("/api/admin/capture-config", requireAdminRole, (req, res) => {
@@ -575,7 +654,7 @@ function registerAdminCaptureRoutes({
           code: "DUPLICATE_CAPTURE_ACCOUNT",
           error: "检测到当前仍是已添加的账号，请先切换到目标 QQ，再重新开始抓取",
         });
-        scheduleRemoteStop(store, flow, 0);
+        scheduleRemoteStop(store, flow, 0, logger);
         return;
       }
       if (!isUpdate && !isAdminUser(currentUser)) {
@@ -640,31 +719,24 @@ function registerAdminCaptureRoutes({
         }
       } catch {}
 
-      let startError = "";
-      try {
-        if (isUpdate) {
-          if (wasRunning) provider.restartAccount(created.id);
-        } else {
-          provider.startAccount(created.id);
-        }
-      } catch (error) {
-        startError = error.message || "账号启动失败";
-        logger.warn("代理抓取账号已添加，但启动失败", {
-          owner: flow.owner,
-          accountId: created.id,
-          error: startError,
-        });
-      }
       flow.result = {
         accountId: created.id,
         name: created.name,
         platform: flow.platform,
         importedFriendCount,
-        startError,
+        startError: "",
         updated: isUpdate,
       };
       flow.updatedAt = Date.now();
       res.json({ ok: true, data: flow.result });
+      const startAccount = () => scheduleCapturedAccountStart({
+        provider,
+        logger,
+        flow,
+        account: created,
+        isUpdate,
+        wasRunning,
+      });
       const config = store.getCaptureConfig();
       if (flow.platform === "qq" && config.autoImportQqGids !== false) {
         scheduleQqFriendCollection({
@@ -674,9 +746,17 @@ function registerAdminCaptureRoutes({
           flow,
           accountId: created.id,
           accountCreatedAt: created.createdAt,
+          afterStop: startAccount,
         });
       } else {
-        scheduleRemoteStop(store, flow);
+        void stopCaptureBeforeAccountStart(store, flow, startAccount).catch((error) => {
+          logger.warn("抓包服务代理释放失败，账号未启动", {
+            owner: flow.owner,
+            accountId: created.id,
+            remoteSessionId: flow.remoteSessionId,
+            error: error.message,
+          });
+        });
       }
     } catch (error) {
       logger.warn("代理抓取添加账号失败", {
@@ -696,7 +776,7 @@ function registerAdminCaptureRoutes({
     flow.cancelled = true;
     captureFlows.delete(flow.id);
     res.json({ ok: true });
-    scheduleRemoteStop(store, flow);
+    scheduleRemoteStop(store, flow, 0, logger);
   });
 }
 
@@ -710,4 +790,5 @@ module.exports = {
   mergeKnownFriendGids,
   normalizeApiBase,
   registerAdminCaptureRoutes,
+  scheduleCapturedAccountStart,
 };
