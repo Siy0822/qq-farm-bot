@@ -3,7 +3,11 @@ const assert = require('node:assert/strict');
 
 const {
   addCapturedValues,
+  collectQqFriendGids,
+  findDuplicateCapturedAccount,
+  getCaptureBypassHosts,
   isCertificateTokenValid,
+  isCompleteQqFriendSource,
   mergeKnownFriendGids,
   normalizeApiBase,
 } = require('../src/controllers/admin-capture-routes');
@@ -22,6 +26,17 @@ test('certificate links require the exact temporary flow token', () => {
   assert.equal(isCertificateTokenValid(flow, ''), false);
 });
 
+test('capture start bypasses the current admin host', () => {
+  const hosts = getCaptureBypassHosts({
+    hostname: 'farm.example.com',
+    headers: {
+      host: '10.0.0.5:3007',
+      origin: 'https://farm.example.com',
+    },
+  });
+  assert.deepEqual(hosts, ['farm.example.com', '10.0.0.5']);
+});
+
 test('editing an account merges captured friend gids without keeping its own gid', () => {
   const merged = mergeKnownFriendGids(
     [10001, 10002],
@@ -29,6 +44,28 @@ test('editing an account merges captured friend gids without keeping its own gid
     90001,
   );
   assert.deepEqual(merged, [10001, 10002, 10003]);
+});
+
+test('captured accounts are rejected when code or gid already exists', () => {
+  const accounts = [
+    { id: '1', platform: 'qq', code: 'same-code', gid: '90001' },
+    { id: '2', platform: 'wx', code: 'wx-code', gid: '90002' },
+  ];
+  assert.equal(findDuplicateCapturedAccount(accounts, {
+    platform: 'qq',
+    code: 'same-code',
+    accountGid: '',
+  })?.id, '1');
+  assert.equal(findDuplicateCapturedAccount(accounts, {
+    platform: 'qq',
+    code: 'new-code',
+    accountGid: '90001',
+  })?.id, '1');
+  assert.equal(findDuplicateCapturedAccount(accounts, {
+    platform: 'qq',
+    code: 'same-code',
+    accountGid: '90001',
+  }, '1'), null);
 });
 
 test('addCapturedValues finds non-empty code and accumulates friend gids', () => {
@@ -55,6 +92,7 @@ test('addCapturedValues finds non-empty code and accumulates friend gids', () =>
         },
       },
       friends: {
+        source: 'gamepb.friendpb.FriendService.GetAll',
         items: [{ gid: '10001' }, { gid: 'bad' }, { gid: '10002' }],
       },
       proxy: { running: true },
@@ -73,6 +111,88 @@ test('addCapturedValues finds non-empty code and accumulates friend gids', () =>
   assert.equal(flow.accountGid, '90001');
   assert.equal(flow.openId, 'openid-1');
   assert.deepEqual([...flow.friendGids], [10001, 10002, 10003]);
+  assert.equal(flow.friendListComplete, true);
   assert.equal(flow.proxy.running, true);
   assert.equal(flow.publicInfo.mitmPort, 8451);
+});
+
+test('QQ friend gids continue syncing after the account is added', async () => {
+  const saved = [];
+  const broadcasts = [];
+  let stopped = false;
+  const flow = {
+    id: 'flow-1',
+    owner: 'admin',
+    accountGid: '90001',
+    friendListComplete: false,
+    friendGids: new Set(),
+    result: { importedFriendCount: 0 },
+  };
+
+  const imported = await collectQqFriendGids({
+    store: {
+      getAccounts: () => ({ accounts: [{ id: 'account-1', createdAt: 123 }] }),
+      getKnownFriendGids: () => [10001],
+      setKnownFriendGids: (accountId, gids) => saved.push({ accountId, gids }),
+    },
+    provider: {
+      broadcastConfig: accountId => broadcasts.push(accountId),
+    },
+    logger: { info() {} },
+    flow,
+    accountId: 'account-1',
+    accountCreatedAt: 123,
+    refresh: async (_store, targetFlow) => {
+      targetFlow.friendGids.add(10002);
+      targetFlow.friendGids.add(90001);
+      targetFlow.friendSource = 'gamepb.friendpb.FriendService.SyncAll';
+      targetFlow.friendListComplete = true;
+    },
+    stop: async () => {
+      stopped = true;
+    },
+  });
+
+  assert.equal(imported, 1);
+  assert.deepEqual(saved, [{ accountId: 'account-1', gids: [10001, 10002] }]);
+  assert.deepEqual(broadcasts, ['account-1']);
+  assert.equal(flow.result.importedFriendCount, 1);
+  assert.equal(stopped, true);
+});
+
+test('complete QQ friend list sources are recognized', () => {
+  assert.equal(isCompleteQqFriendSource('gamepb.friendpb.FriendService.GetAll'), true);
+  assert.equal(isCompleteQqFriendSource('gamepb.friendpb.FriendService.SyncAll'), true);
+  assert.equal(isCompleteQqFriendSource('gamepb.visitpb.VisitService.Enter'), false);
+});
+
+test('QQ friend collection does not write into a reused account id', async () => {
+  let saved = false;
+  let stopped = false;
+  const imported = await collectQqFriendGids({
+    store: {
+      getAccounts: () => ({ accounts: [{ id: 'account-1', createdAt: 456 }] }),
+      getKnownFriendGids: () => [],
+      setKnownFriendGids: () => {
+        saved = true;
+      },
+    },
+    provider: {},
+    logger: { info() {} },
+    flow: {
+      id: 'old-flow',
+      owner: 'admin',
+      friendGids: new Set([10001]),
+      friendListComplete: true,
+    },
+    accountId: 'account-1',
+    accountCreatedAt: 123,
+    stop: async () => {
+      stopped = true;
+    },
+  });
+
+  assert.equal(imported, 0);
+  assert.equal(saved, false);
+  assert.equal(stopped, true);
 });

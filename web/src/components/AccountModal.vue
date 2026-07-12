@@ -16,8 +16,6 @@ const emit = defineEmits(['close', 'saved'])
 
 const CODE_QUERY_RE = /[?&]code=([^&]+)/i
 const QR_AUTO_REFRESH_MS = 110_000
-const QQ_FRIEND_WAIT_MAX_MS = 45_000
-const QQ_FRIEND_SETTLE_MS = 8_000
 const CAPTURE_SUCCESS_STORAGE_KEY = 'capture_login_succeeded'
 
 const wxLoginStore = useWxLoginStore()
@@ -59,10 +57,6 @@ const showCaptureHelp = ref(false)
 const captureHelpMode = ref<'first' | 'daily'>('first')
 const captureHelpDevice = ref<'ios' | 'android'>('ios')
 const captureFlow = ref<CaptureFlowState | null>(null)
-const captureCodeCapturedAt = ref(0)
-const captureFriendStableAt = ref(0)
-const captureLastFriendCount = ref(0)
-const captureAutoCompleteRemaining = ref(0)
 
 const form = reactive({
   name: '',
@@ -74,16 +68,19 @@ const captureHelpSteps = computed(() => captureHelpMode.value === 'first'
   ? [
       '点击开始抓取，获取本次代理地址和端口',
       '打开 CA 证书，并在手机系统中安装和信任',
+      '连续添加时，先切换到目标 QQ 并彻底关闭上一个农场',
       '将手机 Wi-Fi 代理设置为页面显示的地址和端口',
       '彻底关闭后重新打开对应的 QQ 或微信农场',
-      '保持农场打开，等待账号自动添加或更新',
-      '完成后将手机 Wi-Fi 代理改回关闭',
+      'Code 获取后账号会立即添加；QQ 好友 GID 将在后台继续同步',
+      'QQ 农场保持打开，完整好友列表同步后会立即释放代理，最迟约 15 秒',
     ]
   : [
       '点击开始抓取，确认本次代理地址和端口',
+      '连续添加时，先切换到目标 QQ 并彻底关闭上一个农场',
       '将手机 Wi-Fi 代理更新为本次显示的地址和端口',
       '重新打开对应农场，并保持页面打开',
-      '账号完成添加或更新后，关闭手机 Wi-Fi 代理',
+      '账号添加后，QQ 农场继续保持打开，最迟约 15 秒完成后台同步',
+      '后台同步结束后，将手机 Wi-Fi 代理改回关闭',
     ])
 
 const captureDeviceSteps = computed(() => captureHelpDevice.value === 'ios'
@@ -103,11 +100,7 @@ const captureCurrentStep = computed(() => {
     return '开始新的抓取任务'
   if (!captureFlow.value.codeCaptured)
     return `设置 Wi-Fi 代理并打开${captureFlow.value.platform === 'qq' ? ' QQ' : '微信'}农场`
-  if (captureFlow.value.platform === 'qq' && captureFlow.value.friendCount === 0)
-    return '保持 QQ 农场打开，正在等待好友数据'
-  if (captureFlow.value.platform === 'qq')
-    return `已获取 ${captureFlow.value.friendCount} 个好友 GID，正在确认数据稳定`
-  return '已获取 Code，正在完成账号操作'
+  return '已获取 Code，正在立即完成账号操作'
 })
 
 const captureNextStep = computed(() => {
@@ -116,7 +109,7 @@ const captureNextStep = computed(() => {
   if (!captureFlow.value.codeCaptured)
     return '重新打开小程序，并保持农场页面打开'
   if (captureFlow.value.platform === 'qq')
-    return `约 ${captureAutoCompleteRemaining.value} 秒后自动${props.editData ? '更新' : '添加'}账号`
+    return `即将自动${props.editData ? '更新' : '添加'}账号，好友 GID 将在后台同步`
   return `即将自动${props.editData ? '更新' : '添加'}账号`
 })
 
@@ -172,31 +165,7 @@ const { pause: stopCaptureCheck, resume: startCaptureCheck } = useIntervalFn(asy
       return
     captureFlow.value = data.data
     captureError.value = data.data.proxy?.error || ''
-    if (!data.data.codeCaptured) {
-      captureCodeCapturedAt.value = 0
-      captureFriendStableAt.value = 0
-      captureLastFriendCount.value = 0
-      captureAutoCompleteRemaining.value = 0
-      return
-    }
-    if (data.data.platform === 'wx') {
-      await completeCaptureAccount()
-      return
-    }
-    if (!captureCodeCapturedAt.value)
-      captureCodeCapturedAt.value = Date.now()
-    const friendCount = Number(data.data.friendCount) || 0
-    let targetAt = captureCodeCapturedAt.value + QQ_FRIEND_WAIT_MAX_MS
-    if (friendCount > 0) {
-      if (friendCount !== captureLastFriendCount.value) {
-        captureLastFriendCount.value = friendCount
-        captureFriendStableAt.value = Date.now()
-      }
-      targetAt = captureFriendStableAt.value + QQ_FRIEND_SETTLE_MS
-    }
-    const remaining = Math.max(0, Math.ceil((targetAt - Date.now()) / 1000))
-    captureAutoCompleteRemaining.value = remaining
-    if (remaining === 0)
+    if (data.data.codeCaptured)
       await completeCaptureAccount()
   }
   catch (e: any) {
@@ -221,10 +190,6 @@ async function cancelCaptureSession() {
   stopCaptureCheck()
   const flowId = captureFlow.value?.id
   captureFlow.value = null
-  captureCodeCapturedAt.value = 0
-  captureFriendStableAt.value = 0
-  captureLastFriendCount.value = 0
-  captureAutoCompleteRemaining.value = 0
   if (flowId) {
     try {
       await api.delete(`/api/capture/sessions/${flowId}`)
@@ -268,10 +233,15 @@ async function completeCaptureAccount() {
       throw new Error(data?.error || (props.editData ? '更新账号失败' : '添加账号失败'))
     localStorage.setItem(CAPTURE_SUCCESS_STORAGE_KEY, '1')
     stopCaptureCheck()
+    captureFlow.value = null
     emit('saved')
     close()
   }
   catch (e: any) {
+    if (e.response?.data?.code === 'DUPLICATE_CAPTURE_ACCOUNT') {
+      stopCaptureCheck()
+      captureFlow.value = null
+    }
     captureError.value = e.response?.data?.error || e.message || (props.editData ? '更新账号失败' : '添加账号失败')
   }
   finally {

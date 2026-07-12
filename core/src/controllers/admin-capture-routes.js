@@ -3,6 +3,13 @@ const fetch = require("node-fetch");
 
 const CAPTURE_REQUEST_TIMEOUT_MS = 15_000;
 const CAPTURE_FLOW_TTL_MS = 15 * 60 * 1000;
+const QQ_FRIEND_COLLECTION_MAX_MS = 15_000;
+const QQ_FRIEND_COLLECTION_POLL_MS = 1500;
+const COMPLETE_QQ_FRIEND_SOURCES = new Set([
+  "gamepb.friendpb.FriendService.GetAll",
+  "gamepb.friendpb.FriendService.SyncAll",
+  "gamepb.friendpb.FriendService.GetGameFriends",
+]);
 const captureFlows = new Map();
 
 function isAdminUser(user) {
@@ -25,6 +32,28 @@ function normalizeApiBase(value) {
   url.search = "";
   url.pathname = url.pathname.replace(/\/+$/, "");
   return url.toString().replace(/\/+$/, "");
+}
+
+function getCaptureBypassHosts(req) {
+  const values = [
+    req?.hostname,
+    req?.headers?.["x-forwarded-host"],
+    req?.headers?.host,
+    req?.headers?.origin,
+    req?.headers?.referer,
+  ];
+  const hosts = [];
+  for (const value of values) {
+    const raw = String(value || "").split(",")[0].trim();
+    if (!raw) continue;
+    try {
+      const host = new URL(/^https?:\/\//i.test(raw) ? raw : `http://${raw}`).hostname
+        .replace(/^\[|\]$/g, "")
+        .toLowerCase();
+      if (host && !hosts.includes(host)) hosts.push(host);
+    } catch {}
+  }
+  return hosts.slice(0, 8);
 }
 
 function resolveCaptureConfig(store, override = {}) {
@@ -102,6 +131,29 @@ function mergeKnownFriendGids(existingGids, capturedGids, accountGid) {
   );
 }
 
+function isCompleteQqFriendSource(source) {
+  return COMPLETE_QQ_FRIEND_SOURCES.has(String(source || "").trim());
+}
+
+function isSameAccountInstance(store, accountId, accountCreatedAt) {
+  const account = store.getAccounts().accounts.find(
+    (item) => String(item.id) === String(accountId),
+  );
+  return !!account && String(account.createdAt || "") === String(accountCreatedAt || "");
+}
+
+function findDuplicateCapturedAccount(accounts, flow, excludedAccountId = "") {
+  const code = String(flow?.code || "").trim();
+  const gid = String(flow?.accountGid || "").trim();
+  const platform = flow?.platform === "wx" ? "wx" : "qq";
+  return (Array.isArray(accounts) ? accounts : []).find((account) => {
+    if (String(account?.id || "") === String(excludedAccountId || "")) return false;
+    if ((account?.platform === "wx" ? "wx" : "qq") !== platform) return false;
+    return (code && String(account?.code || "").trim() === code)
+      || (gid && String(account?.gid || "").trim() === gid);
+  }) || null;
+}
+
 function addCapturedValues(flow, snapshot) {
   const data = snapshot?.data || snapshot?.state || snapshot;
   if (!data || typeof data !== "object") return;
@@ -121,6 +173,9 @@ function addCapturedValues(flow, snapshot) {
     const gid = Number(friend?.gid);
     if (Number.isSafeInteger(gid) && gid > 0) flow.friendGids.add(gid);
   }
+  const friendSource = String(data.friends?.source || "").trim();
+  if (friendSource) flow.friendSource = friendSource;
+  if (isCompleteQqFriendSource(friendSource)) flow.friendListComplete = true;
 
   flow.publicInfo = data.publicInfo || flow.publicInfo;
   flow.proxy = data.proxy || flow.proxy;
@@ -181,6 +236,95 @@ async function stopRemoteFlow(store, flow) {
 function scheduleRemoteStop(store, flow, delayMs = 5000) {
   const timer = setTimeout(() => stopRemoteFlow(store, flow), delayMs);
   if (typeof timer.unref === "function") timer.unref();
+}
+
+function waitForNextCollectionPoll(delayMs) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, delayMs);
+    if (typeof timer.unref === "function") timer.unref();
+  });
+}
+
+async function collectQqFriendGids({
+  store,
+  provider,
+  logger,
+  flow,
+  accountId,
+  accountCreatedAt,
+  refresh = refreshFlow,
+  stop = stopRemoteFlow,
+  wait = waitForNextCollectionPoll,
+  now = Date.now,
+  maxWaitMs = QQ_FRIEND_COLLECTION_MAX_MS,
+  pollMs = QQ_FRIEND_COLLECTION_POLL_MS,
+}) {
+  const deadline = now() + maxWaitMs;
+  let lastRefreshError = null;
+
+  try {
+    while (!flow.cancelled && now() < deadline) {
+      if (!isSameAccountInstance(store, accountId, accountCreatedAt)) {
+        flow.cancelled = true;
+        logger.info("账号已删除或替换，停止旧的好友 GID 后台同步", {
+          owner: flow.owner,
+          accountId,
+        });
+        return 0;
+      }
+      if (flow.friendListComplete) break;
+
+      try {
+        await refresh(store, flow);
+        lastRefreshError = null;
+      } catch (error) {
+        lastRefreshError = error;
+      }
+      if (flow.friendListComplete) break;
+
+      const remainingMs = deadline - now();
+      if (remainingMs > 0) await wait(Math.min(pollMs, remainingMs));
+    }
+
+    if (flow.cancelled || !isSameAccountInstance(store, accountId, accountCreatedAt)) return 0;
+    const knownGids = store.getKnownFriendGids(accountId);
+    const gids = mergeKnownFriendGids(knownGids, flow.friendGids, flow.accountGid);
+    const previousGids = new Set(knownGids.map(Number));
+    const importedFriendCount = gids.filter((gid) => !previousGids.has(gid)).length;
+    if (importedFriendCount > 0) {
+      store.setKnownFriendGids(accountId, gids);
+      if (provider && typeof provider.broadcastConfig === "function") {
+        provider.broadcastConfig(accountId);
+      }
+    }
+    if (flow.result) flow.result.importedFriendCount = importedFriendCount;
+    logger.info("代理抓取好友 GID 后台同步完成", {
+      owner: flow.owner,
+      accountId,
+      capturedFriendCount: flow.friendGids.size,
+      importedFriendCount,
+      friendSource: flow.friendSource || "",
+      completeFriendList: flow.friendListComplete === true,
+      refreshError: lastRefreshError?.message || "",
+    });
+    return importedFriendCount;
+  } finally {
+    await stop(store, flow);
+    if (captureFlows.get(flow.id) === flow) captureFlows.delete(flow.id);
+  }
+}
+
+function scheduleQqFriendCollection(options) {
+  const { flow, logger } = options;
+  if (flow.friendCollectionScheduled) return;
+  flow.friendCollectionScheduled = true;
+  void collectQqFriendGids(options).catch((error) => {
+    logger.warn("代理抓取账号已添加，但好友 GID 后台同步失败", {
+      owner: flow.owner,
+      accountId: options.accountId,
+      error: error.message,
+    });
+  });
 }
 
 async function removeExistingOwnerFlows(store, owner) {
@@ -338,6 +482,8 @@ function registerAdminCaptureRoutes({
         accountGid: "",
         openId: "",
         friendGids: new Set(),
+        friendSource: "",
+        friendListComplete: false,
         publicInfo: {},
         proxy: {},
         captureStatus: "idle",
@@ -352,7 +498,7 @@ function registerAdminCaptureRoutes({
         const started = await captureRequest(config, "/api/capture/start", {
           method: "POST",
           sessionId: remoteSessionId,
-          body: { mode: platform },
+          body: { mode: platform, bypassHosts: getCaptureBypassHosts(req) },
           timeout: 30_000,
         });
         addCapturedValues(flow, started);
@@ -409,15 +555,29 @@ function registerAdminCaptureRoutes({
     if (flow.completing) return res.status(409).json({ ok: false, error: "账号正在添加中" });
     flow.completing = true;
     try {
-      try {
-        await refreshFlow(store, flow);
-      } catch (error) {
-        if (!flow.code) throw error;
-      }
+      if (!flow.code) await refreshFlow(store, flow);
       if (!flow.code) return res.status(400).json({ ok: false, error: "尚未获取到 Code" });
 
       const currentUser = req.currentUser;
       const isUpdate = !!flow.accountId;
+      const allAccounts = store.getAccounts().accounts;
+      const duplicate = findDuplicateCapturedAccount(allAccounts, flow, flow.accountId);
+      if (duplicate) {
+        flow.cancelled = true;
+        captureFlows.delete(flow.id);
+        logger.warn("代理抓取检测到重复账号，已停止本次添加", {
+          owner: flow.owner,
+          platform: flow.platform,
+          duplicateAccountId: duplicate.id,
+        });
+        res.status(409).json({
+          ok: false,
+          code: "DUPLICATE_CAPTURE_ACCOUNT",
+          error: "检测到当前仍是已添加的账号，请先切换到目标 QQ，再重新开始抓取",
+        });
+        scheduleRemoteStop(store, flow, 0);
+        return;
+      }
       if (!isUpdate && !isAdminUser(currentUser)) {
         const accountCount = store.getAccountsByUser(currentUser.username).accounts.length;
         const accountLimit = currentUser.accountLimit || userStore.DEFAULT_ACCOUNT_LIMIT || 2;
@@ -431,7 +591,7 @@ function registerAdminCaptureRoutes({
 
       const name = String(req.body?.name || "").trim();
       const existing = isUpdate
-        ? store.getAccounts().accounts.find(
+        ? allAccounts.find(
             (account) => String(account.id) === flow.accountId,
           )
         : null;
@@ -466,24 +626,7 @@ function registerAdminCaptureRoutes({
         startError: "",
       };
 
-      const config = store.getCaptureConfig();
-      let importedFriendCount = 0;
-      try {
-        if (flow.platform === "qq" && config.autoImportQqGids !== false) {
-          const accountGid = Number(flow.accountGid);
-          const knownGids = isUpdate ? store.getKnownFriendGids(created.id) : [];
-          const gids = mergeKnownFriendGids(knownGids, flow.friendGids, accountGid);
-          store.setKnownFriendGids(created.id, gids);
-          const previousGids = new Set(knownGids.map(Number));
-          importedFriendCount = gids.filter((gid) => !previousGids.has(gid)).length;
-        }
-      } catch (error) {
-        logger.warn("代理抓取账号已添加，但好友 GID 导入失败", {
-          owner: flow.owner,
-          accountId: created.id,
-          error: error.message,
-        });
-      }
+      const importedFriendCount = 0;
 
       try {
         if (provider.addAccountLog) {
@@ -522,7 +665,19 @@ function registerAdminCaptureRoutes({
       };
       flow.updatedAt = Date.now();
       res.json({ ok: true, data: flow.result });
-      scheduleRemoteStop(store, flow);
+      const config = store.getCaptureConfig();
+      if (flow.platform === "qq" && config.autoImportQqGids !== false) {
+        scheduleQqFriendCollection({
+          store,
+          provider,
+          logger,
+          flow,
+          accountId: created.id,
+          accountCreatedAt: created.createdAt,
+        });
+      } else {
+        scheduleRemoteStop(store, flow);
+      }
     } catch (error) {
       logger.warn("代理抓取添加账号失败", {
         owner: flow.owner,
@@ -538,6 +693,7 @@ function registerAdminCaptureRoutes({
   app.delete("/api/capture/sessions/:flowId", async (req, res) => {
     const flow = findOwnedFlow(req.params.flowId, req.currentUser);
     if (!flow) return res.json({ ok: true });
+    flow.cancelled = true;
     captureFlows.delete(flow.id);
     res.json({ ok: true });
     scheduleRemoteStop(store, flow);
@@ -546,7 +702,11 @@ function registerAdminCaptureRoutes({
 
 module.exports = {
   addCapturedValues,
+  collectQqFriendGids,
+  findDuplicateCapturedAccount,
+  getCaptureBypassHosts,
   isCertificateTokenValid,
+  isCompleteQqFriendSource,
   mergeKnownFriendGids,
   normalizeApiBase,
   registerAdminCaptureRoutes,
