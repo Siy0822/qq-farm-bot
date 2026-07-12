@@ -485,6 +485,13 @@ const DEFAULT_LOGIN_LINKS = {
     qqGroupUrl: ''
 };
 
+const DEFAULT_CAPTURE_CONFIG = {
+    enabled: false,
+    apiBase: 'http://127.0.0.1:8450',
+    apiToken: '',
+    autoImportQqGids: true
+};
+
 let accountFallbackConfig = (() => {
     const cfg = { ...DEFAULT_ACCOUNT_CONFIG };
     cfg.automation = { ...DEFAULT_ACCOUNT_CONFIG.automation };
@@ -508,6 +515,7 @@ const globalConfig = {
     systemConfig: null,
     loginLinks: null,
     globalWxConfig: null,
+    captureConfig: null,
     deviceProtocol: null,
     userDeviceProtocols: {},
     antiResaleConfig: null
@@ -793,6 +801,16 @@ function loadGlobalConfig() {
                 appId: String(data.globalWxConfig.appId || 'wx5306c5978fdb76e4').trim(),
                 autoAddAccount: data.globalWxConfig.autoAddAccount !== false,
                 userIsolation: data.globalWxConfig.userIsolation !== false
+            };
+        }
+
+        // Code/GID 抓取服务配置
+        if (data.captureConfig && typeof data.captureConfig === 'object') {
+            globalConfig.captureConfig = {
+                enabled: data.captureConfig.enabled === true,
+                apiBase: String(data.captureConfig.apiBase || DEFAULT_CAPTURE_CONFIG.apiBase).trim(),
+                apiToken: String(data.captureConfig.apiToken || '').trim(),
+                autoImportQqGids: data.captureConfig.autoImportQqGids !== false
             };
         }
 
@@ -1526,6 +1544,29 @@ function setGlobalWxConfig(config) {
     return { ...globalConfig.globalWxConfig };
 }
 
+// ==================== Code/GID 抓取服务配置 ====================
+
+function getCaptureConfig() {
+    return globalConfig.captureConfig
+        ? { ...DEFAULT_CAPTURE_CONFIG, ...globalConfig.captureConfig }
+        : { ...DEFAULT_CAPTURE_CONFIG };
+}
+
+function setCaptureConfig(config) {
+    if (!config || typeof config !== 'object') return null;
+    const current = getCaptureConfig();
+    globalConfig.captureConfig = {
+        enabled: config.enabled === true,
+        apiBase: String(config.apiBase || current.apiBase || DEFAULT_CAPTURE_CONFIG.apiBase).trim(),
+        apiToken: config.apiToken === undefined || config.apiToken === null || config.apiToken === ''
+            ? current.apiToken
+            : String(config.apiToken).trim(),
+        autoImportQqGids: config.autoImportQqGids !== false
+    };
+    saveGlobalConfig();
+    return { ...globalConfig.captureConfig };
+}
+
 // ==================== 设备协议 ====================
 
 const DEFAULT_DEVICE_PROTOCOL = {
@@ -1700,6 +1741,9 @@ module.exports = {
     getGlobalWxConfig,
     setGlobalWxConfig,
     DEFAULT_WX_CONFIG,
+    getCaptureConfig,
+    setCaptureConfig,
+    DEFAULT_CAPTURE_CONFIG,
     getDeviceProtocol,
     setDeviceProtocol,
     DEFAULT_DEVICE_PROTOCOL,

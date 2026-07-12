@@ -176,6 +176,8 @@ async function confirmClearLogs() {
 const {
   systemConfigSaving,
   wxConfigSaving,
+  captureConfigSaving,
+  captureConfigTesting,
   loginLinksSaving,
   loginLogoUploading,
   showResetSystemConfirm,
@@ -186,10 +188,14 @@ const {
   localSystemConfig,
   defaultSystemConfig,
   localWxConfig,
+  localCaptureConfig,
   localLoginLinks,
   platformOptions,
   osOptions,
   loadWxConfig,
+  loadCaptureConfig,
+  handleTestCaptureConfig,
+  handleSaveCaptureConfig,
   loadLoginLinks,
   handleSaveLoginLinks,
   handleResetLoginLinks,
@@ -212,6 +218,7 @@ onMounted(() => {
   fetchLoginLogs()
   loadSystemConfig()
   loadWxConfig()
+  loadCaptureConfig()
   loadLoginLinks()
   fetchCardClaimStatus()
 })
@@ -306,12 +313,15 @@ onMounted(() => {
         v-else-if="activeTab === 'system'"
         v-model:local-system-config="localSystemConfig"
         v-model:local-wx-config="localWxConfig"
+        v-model:local-capture-config="localCaptureConfig"
         v-model:local-login-links="localLoginLinks"
         :default-system-config="defaultSystemConfig"
         :platform-options="platformOptions"
         :os-options="osOptions"
         :system-config-saving="systemConfigSaving"
         :wx-config-saving="wxConfigSaving"
+        :capture-config-saving="captureConfigSaving"
+        :capture-config-testing="captureConfigTesting"
         :login-links-saving="loginLinksSaving"
         :login-logo-uploading="loginLogoUploading"
         @reset-system="openResetSystemConfirm"
@@ -319,6 +329,8 @@ onMounted(() => {
         @reset-login-links="openResetLoginLinksConfirm"
         @reset-wx="openResetWxConfigConfirm"
         @save-wx="openSaveWxConfigConfirm"
+        @test-capture="handleTestCaptureConfig"
+        @save-capture="handleSaveCaptureConfig"
         @save-login-links="handleSaveLoginLinks"
         @upload-login-logo="handleUploadLoginLogo"
       />

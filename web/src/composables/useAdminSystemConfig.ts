@@ -18,6 +18,14 @@ export interface WxConfig {
   userIsolation: boolean
 }
 
+export interface CaptureConfig {
+  enabled: boolean
+  apiBase: string
+  apiToken: string
+  tokenConfigured: boolean
+  autoImportQqGids: boolean
+}
+
 export interface LoginLinks {
   logoUrl: string
   title: string
@@ -48,6 +56,14 @@ const defaultWxConfig: WxConfig = {
   userIsolation: true,
 }
 
+const defaultCaptureConfig: CaptureConfig = {
+  enabled: false,
+  apiBase: 'http://127.0.0.1:8450',
+  apiToken: '',
+  tokenConfigured: false,
+  autoImportQqGids: true,
+}
+
 const defaultLoginLinks: LoginLinks = {
   logoUrl: '',
   title: 'QQ农场智能助手',
@@ -61,6 +77,8 @@ export function useAdminSystemConfig(options: UseAdminSystemConfigOptions) {
   const systemConfigSaving = ref(false)
   const systemConfigLoading = ref(false)
   const wxConfigSaving = ref(false)
+  const captureConfigSaving = ref(false)
+  const captureConfigTesting = ref(false)
   const loginLinksSaving = ref(false)
   const loginLogoUploading = ref(false)
 
@@ -73,6 +91,7 @@ export function useAdminSystemConfig(options: UseAdminSystemConfigOptions) {
   const localSystemConfig = ref<SystemConfig>({ ...defaultSystemConfigValues })
   const defaultSystemConfig = ref<SystemConfig>({ ...defaultSystemConfigValues })
   const localWxConfig = ref<WxConfig>({ ...defaultWxConfig })
+  const localCaptureConfig = ref<CaptureConfig>({ ...defaultCaptureConfig })
   const localLoginLinks = ref<LoginLinks>({ ...defaultLoginLinks })
 
   async function loadLoginLinks() {
@@ -189,6 +208,60 @@ export function useAdminSystemConfig(options: UseAdminSystemConfigOptions) {
     }
   }
 
+  async function loadCaptureConfig() {
+    try {
+      const { data } = await api.get('/api/admin/capture-config')
+      if (data?.ok && data.data)
+        localCaptureConfig.value = { ...defaultCaptureConfig, ...data.data, apiToken: '' }
+    }
+    catch (e: any) {
+      console.error('加载抓包服务配置失败:', e)
+    }
+  }
+
+  async function handleTestCaptureConfig() {
+    captureConfigTesting.value = true
+    try {
+      const { data } = await api.post('/api/admin/capture-config/test', localCaptureConfig.value, { timeout: 20000 })
+      if (data?.ok) {
+        const poolSize = Number(data.data?.portPoolSize) || 0
+        options.showAlert(`连接成功${poolSize ? `，可用代理端口 ${poolSize} 个` : ''}`, 'primary')
+      }
+      else {
+        options.showAlert(data?.error || '连接失败', 'danger')
+      }
+    }
+    catch (e: any) {
+      options.showAlert(e?.response?.data?.error || `连接失败: ${e.message || '未知错误'}`, 'danger')
+    }
+    finally {
+      captureConfigTesting.value = false
+    }
+  }
+
+  async function handleSaveCaptureConfig() {
+    captureConfigSaving.value = true
+    try {
+      const { data } = await api.post('/api/admin/capture-config', {
+        ...localCaptureConfig.value,
+        confirmed: true,
+      })
+      if (data?.ok && data.data) {
+        localCaptureConfig.value = { ...defaultCaptureConfig, ...data.data, apiToken: '' }
+        options.showAlert('Code/GID 抓取服务配置已保存', 'primary')
+      }
+      else {
+        options.showAlert(data?.error || '保存失败', 'danger')
+      }
+    }
+    catch (e: any) {
+      options.showAlert(e?.response?.data?.error || `保存失败: ${e.message || '未知错误'}`, 'danger')
+    }
+    finally {
+      captureConfigSaving.value = false
+    }
+  }
+
   async function handleSaveWxConfig() {
     showSaveWxConfigConfirm.value = false
     wxConfigSaving.value = true
@@ -299,6 +372,8 @@ export function useAdminSystemConfig(options: UseAdminSystemConfigOptions) {
     systemConfigSaving,
     systemConfigLoading,
     wxConfigSaving,
+    captureConfigSaving,
+    captureConfigTesting,
     loginLinksSaving,
     loginLogoUploading,
     showResetSystemConfirm,
@@ -309,10 +384,14 @@ export function useAdminSystemConfig(options: UseAdminSystemConfigOptions) {
     localSystemConfig,
     defaultSystemConfig,
     localWxConfig,
+    localCaptureConfig,
     localLoginLinks,
     platformOptions,
     osOptions,
     loadWxConfig,
+    loadCaptureConfig,
+    handleTestCaptureConfig,
+    handleSaveCaptureConfig,
     loadLoginLinks,
     handleSaveLoginLinks,
     handleResetLoginLinks,

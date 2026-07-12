@@ -37,6 +37,7 @@ const { createAdminAccountAccess } = require("./admin-account-access");
 const { registerAdminAuthRoutes } = require("./admin-auth-routes");
 const { registerAdminBagRoutes } = require("./admin-bag-routes");
 const { registerAdminCardRoutes } = require("./admin-card-routes");
+const { registerAdminCaptureRoutes } = require("./admin-capture-routes");
 const { registerAdminCurrentUserRoutes } = require("./admin-current-user-routes");
 const {
   registerAdminFarmOperationRoutes,
@@ -160,7 +161,10 @@ function configureStaticAssets(expressApp, webDist) {
 
 function registerAuthGate(expressApp, requireAdminToken) {
   expressApp.use("/api", (req, res, next) => {
-    if (PUBLIC_API_PATHS.has(req.path)) return next();
+    if (
+      PUBLIC_API_PATHS.has(req.path)
+      || req.path.startsWith("/public/capture-certificate/")
+    ) return next();
     return requireAdminToken(req, res, next);
   });
 }
@@ -487,6 +491,17 @@ function startAdminServer(dataProvider) {
     getDefaultSystemConfig,
     getRuntimeConfig,
     updateRuntimeConfig,
+  });
+  registerAdminCaptureRoutes({
+    app,
+    store,
+    provider,
+    userStore,
+    logger: adminLogger,
+    requireAdminRole,
+    requireDangerConfirmation,
+    canAccessAccount,
+    resolveAccountReference,
   });
   registerAdminCardRoutes({
     app,
