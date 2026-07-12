@@ -35,11 +35,14 @@ const {
   isOccupiedSlaveLand,
 } = require('./farm-land-analyzer');
 
+const GOLDEN_BUG_ITEM_ID = 301101;
+const GOLDEN_BUG_SOCIAL_TYPE = 2;
+
 // ===== Analyze friend lands =====
 
 /**
  * Analyze a friend's lands and classify them into actionable categories.
- * Returns: { stealable, stealableInfo, needWater, needWeed, needBug, canPutWeed, canPutBug }
+ * Returns actionable ordinary-farm and golden-bug land groups.
  */
 function analyzeFriendLands(lands, myGid, friendName = '', options = {}) {
   const { plantBlacklist = null } = options;
@@ -51,6 +54,7 @@ function analyzeFriendLands(lands, myGid, friendName = '', options = {}) {
     needBug: [],
     canPutWeed: [],
     canPutBug: [],
+    canPutGoldenBug: [],
   };
 
   const landMap = buildLandMap(lands);
@@ -72,6 +76,15 @@ function analyzeFriendLands(lands, myGid, friendName = '', options = {}) {
     if (!currentPhase) continue;
 
     const phase = currentPhase.phase;
+    const socialItems = Array.isArray(plant.social_items) ? plant.social_items : [];
+    const alreadyHasGoldenBug = socialItems.some(item => (
+      toNum(item && item.item_id) === GOLDEN_BUG_ITEM_ID &&
+      toNum(item && item.type) === GOLDEN_BUG_SOCIAL_TYPE
+    ));
+
+    if (phase !== PlantPhase.MATURE && phase !== PlantPhase.DEAD && !alreadyHasGoldenBug) {
+      result.canPutGoldenBug.push(landId);
+    }
 
     // Mature & stealable
     if (phase === PlantPhase.MATURE) {
@@ -538,7 +551,7 @@ async function getFriendLandsDetail(gid) {
     }
 
     return { lands: detailLands, summary: analysis };
-  } catch (_) {
+  } catch {
     return { lands: [], summary: {} };
   }
 }

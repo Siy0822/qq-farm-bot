@@ -18,7 +18,9 @@ const defaultAutomation = {
   friend_steal: false,
   friend_help: false,
   friend_bad: false,
+  friend_golden_bug: false,
   friend_help_exp_limit: false,
+  golden_bug_clear: true,
   fertilizer_gift: false,
   fertilizer_buy_organic: false,
   fertilizer_buy_normal: false,
@@ -50,6 +52,8 @@ export function useAutomationSettings({
     fertilizerBuyNormalCount: 10,
     fertilizerBuyNormalThresholdHours: 10,
     fertilizerBuyCheckIntervalMinutes: 30,
+    goldenBugKeepCount: 0,
+    goldenBugRoundLimit: 24,
   })
 
   const localAutoCodeRefresh = ref({
@@ -113,6 +117,8 @@ export function useAutomationSettings({
       localAutomationSettings.value.fertilizerBuyNormalCount = settings.value.fertilizerBuyNormalCount ?? 10
       localAutomationSettings.value.fertilizerBuyNormalThresholdHours = settings.value.fertilizerBuyNormalThresholdHours ?? 10
       localAutomationSettings.value.fertilizerBuyCheckIntervalMinutes = settings.value.fertilizerBuyCheckIntervalMinutes ?? 30
+      localAutomationSettings.value.goldenBugKeepCount = settings.value.goldenBugKeepCount ?? 0
+      localAutomationSettings.value.goldenBugRoundLimit = settings.value.goldenBugRoundLimit ?? 24
       localAutoCodeRefresh.value = {
         enabled: settings.value.autoCodeRefresh?.enabled === true,
         intervalMinutes: normalizeAutoCodeRefreshInterval(settings.value.autoCodeRefresh?.intervalMinutes),
@@ -144,6 +150,8 @@ export function useAutomationSettings({
         fertilizerBuyNormalCount: localAutomationSettings.value.fertilizerBuyNormalCount,
         fertilizerBuyNormalThresholdHours: localAutomationSettings.value.fertilizerBuyNormalThresholdHours,
         fertilizerBuyCheckIntervalMinutes: localAutomationSettings.value.fertilizerBuyCheckIntervalMinutes,
+        goldenBugKeepCount: localAutomationSettings.value.goldenBugKeepCount,
+        goldenBugRoundLimit: localAutomationSettings.value.goldenBugRoundLimit,
       }
       const res = await settingStore.saveSettings(accountId, fullSettings)
       if (res.ok) {

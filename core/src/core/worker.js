@@ -32,6 +32,7 @@ const {
     stopFriendCheckLoop,
     refreshFriendCheckLoop,
     runBadOnceOnStartup,
+    runGoldenBugPlacement,
     getFriendsList,
     getFriendLandsDetail,
     doFriendOperation,
@@ -344,7 +345,7 @@ let nextHelpRunAt = 0;
 
 async function runHelpTick(autoConfig) {
     if (helpTaskRunning || friendSyncPaused) return;
-    if (!autoConfig.friend_help) return;
+    if (!autoConfig.friend_help && !autoConfig.friend_golden_bug) return;
     helpTaskRunning = true;
 
     const nextDelay = randomIntervalMs(
@@ -353,7 +354,8 @@ async function runHelpTick(autoConfig) {
     );
 
     try {
-        await checkFriends({ onlyHelp: true });
+        if (autoConfig.friend_help) await checkFriends({ onlyHelp: true });
+        if (autoConfig.friend_golden_bug) await runGoldenBugPlacement();
     } catch (err) {
         if (!isTransientNetworkError(err)) {
             log('系统', `帮助巡查执行失败: ${  err.message}`, {
@@ -523,6 +525,15 @@ function applyRuntimeConfig(config, syncStatusAfter = false) {
                             module: 'friend', event: '开启捣乱立即执行', result: 'error'
                         });
                     }
+                });
+            }
+
+            const prevGoldenBug = !!(prevAuto && prevAuto.friend_golden_bug);
+            const newGoldenBug = !!(newAuto && newAuto.friend_golden_bug);
+            if (!prevGoldenBug && newGoldenBug) {
+                workerScheduler.setTimeoutTask('friend_golden_bug_immediate', 3000, async () => {
+                    if (!loginReady) return;
+                    await runGoldenBugPlacement({ force: true });
                 });
             }
         }

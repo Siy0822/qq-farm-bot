@@ -3,6 +3,16 @@ const { getPlantName, getPlantExp, getPlantById, getPlantGrowTime, getSeedImageB
 const { toNum, toTimeSec, getServerTimeSec, logWarn } = require('../utils/utils');
 const { getAllLands } = require('./farm-api');
 
+const GOLDEN_BUG_ITEM_ID = 301101;
+const GOLDEN_BUG_SOCIAL_TYPE = 2;
+
+function hasGoldenBug(plant) {
+  return !!(plant && Array.isArray(plant.social_items) && plant.social_items.some(item => (
+    toNum(item && item.item_id) === GOLDEN_BUG_ITEM_ID &&
+    toNum(item && item.type) === GOLDEN_BUG_SOCIAL_TYPE
+  )));
+}
+
 // ─── 辅助函数 ───
 
 function isTransientNetworkError(err) {
@@ -99,7 +109,7 @@ function getLinkedMasterLand(land, landMap) {
 
 /**
  * 获取地块的显示上下文（处理合并种植）
- * @returns {{ sourceLand, occupiedByMaster, masterLandId, occupiedLandIds }}
+ * @returns {{ sourceLand, occupiedByMaster, masterLandId, occupiedLandIds }} 显示用土地上下文
  */
 function getDisplayLandContext(land, landMap) {
   const master = getLinkedMasterLand(land, landMap);
@@ -157,7 +167,7 @@ function summarizeLandDetails(lands) {
  */
 function analyzeLands(lands, debug = false) {
   const result = {
-    harvestable: [], needWater: [], needWeed: [], needBug: [],
+    harvestable: [], needWater: [], needWeed: [], needBug: [], needGoldenBug: [],
     growing: [], empty: [], dead: [], unlockable: [], upgradable: [],
     harvestableInfo: []
   };
@@ -184,6 +194,8 @@ function analyzeLands(lands, debug = false) {
       result.empty.push(landId);
       continue;
     }
+
+    if (hasGoldenBug(plant)) result.needGoldenBug.push(landId);
 
     const plantName = plant.name || '未知作物';
     const debugLabel = `土地#${landId}(${plantName})`;

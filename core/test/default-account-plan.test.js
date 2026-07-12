@@ -20,6 +20,8 @@ test('default plans keep only strategy and automation fields', () => {
     intervals: { farmMin: 7, farmMax: 9 },
     friendBlacklist: [10001],
     knownFriendGids: [10002],
+    goldenBugKeepCount: 5,
+    goldenBugRoundLimit: 12,
     offlineReminder: { smtpPass: 'secret' },
   });
 
@@ -28,6 +30,8 @@ test('default plans keep only strategy and automation fields', () => {
   assert.equal(plan.config.plantingStrategy, 'max_profit');
   assert.equal(plan.config.automation.farm, true);
   assert.equal(plan.config.intervals.farmMin, 7);
+  assert.equal(plan.config.goldenBugKeepCount, 5);
+  assert.equal(plan.config.goldenBugRoundLimit, 12);
   assert.equal('friendBlacklist' in plan.config, false);
   assert.equal('knownFriendGids' in plan.config, false);
   assert.equal('offlineReminder' in plan.config, false);
@@ -45,6 +49,8 @@ test('new accounts inherit an enabled user default plan', () => {
   assert.equal(config.plantingStrategy, 'max_profit');
   assert.equal(config.automation.farm, true);
   assert.equal(config.intervals.farmMin, 7);
+  assert.equal(config.goldenBugKeepCount, 5);
+  assert.equal(config.goldenBugRoundLimit, 12);
 });
 
 test('disabled plans do not change new account defaults', () => {

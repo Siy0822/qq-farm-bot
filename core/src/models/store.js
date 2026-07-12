@@ -208,6 +208,7 @@ const DEFAULT_AUTOMATION = {
     friend_steal: true,
     friend_help: true,
     friend_bad: false,
+    friend_golden_bug: false,
     task: true,
     fertilizer_gift: false,
     fertilizer_buy_organic: false,
@@ -217,7 +218,8 @@ const DEFAULT_AUTOMATION = {
     fertilizer_multi_season: true,
     fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
     fertilizer_smart_seconds: 300,
-    skip_own_weed_bug: true
+    skip_own_weed_bug: true,
+    golden_bug_clear: true
 };
 
 /** 默认间隔配置（秒） */
@@ -267,7 +269,9 @@ const DEFAULT_ACCOUNT_CONFIG = {
     fertilizerBuyCheckIntervalMinutes: 60,
     bagSeedPriority: [],
     bagSeedFallbackStrategy: 'level',
-    autoAcceptFriendMinLevel: 0
+    autoAcceptFriendMinLevel: 0,
+    goldenBugKeepCount: 0,
+    goldenBugRoundLimit: 24
 };
 
 const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
@@ -463,6 +467,8 @@ function cloneAccountConfig(config = DEFAULT_ACCOUNT_CONFIG) {
         fertilizerBuyNormalThresholdHours: Math.max(0, Math.min(720, Number(config.fertilizerBuyNormalThresholdHours) || 10)),
         fertilizerBuyCheckIntervalMinutes: Math.max(1, Math.min(1440, Number(config.fertilizerBuyCheckIntervalMinutes) || 60)),
         autoAcceptFriendMinLevel: Math.max(0, Math.min(200, Number(config.autoAcceptFriendMinLevel) || 0)),
+        goldenBugKeepCount: Math.max(0, Math.min(9999, Number(config.goldenBugKeepCount) || 0)),
+        goldenBugRoundLimit: Math.max(1, Math.min(100, Number(config.goldenBugRoundLimit) || 24)),
         bagSeedPriority: normalizeBagSeedPriority(config.bagSeedPriority),
         bagSeedFallbackStrategy: normalizeBagSeedFallbackStrategy(config.bagSeedFallbackStrategy)
     };
@@ -640,6 +646,12 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
     if (input.autoAcceptFriendMinLevel !== undefined && input.autoAcceptFriendMinLevel !== null) {
         cfg.autoAcceptFriendMinLevel = Math.max(0, Math.min(200, Number(input.autoAcceptFriendMinLevel) || 0));
     }
+    if (input.goldenBugKeepCount !== undefined && input.goldenBugKeepCount !== null) {
+        cfg.goldenBugKeepCount = Math.max(0, Math.min(9999, Number(input.goldenBugKeepCount) || 0));
+    }
+    if (input.goldenBugRoundLimit !== undefined && input.goldenBugRoundLimit !== null) {
+        cfg.goldenBugRoundLimit = Math.max(1, Math.min(100, Number(input.goldenBugRoundLimit) || 24));
+    }
 
     // 背包种子优先级
     if (input.bagSeedPriority !== undefined && input.bagSeedPriority !== null) {
@@ -672,6 +684,8 @@ function pickDefaultPlanConfig(raw) {
         fertilizerBuyNormalCount: cfg.fertilizerBuyNormalCount,
         fertilizerBuyNormalThresholdHours: cfg.fertilizerBuyNormalThresholdHours,
         fertilizerBuyCheckIntervalMinutes: cfg.fertilizerBuyCheckIntervalMinutes,
+        goldenBugKeepCount: cfg.goldenBugKeepCount,
+        goldenBugRoundLimit: cfg.goldenBugRoundLimit,
         autoAcceptFriendMinLevel: cfg.autoAcceptFriendMinLevel,
         bagSeedPriority: [...cfg.bagSeedPriority],
         bagSeedFallbackStrategy: cfg.bagSeedFallbackStrategy
@@ -1021,6 +1035,8 @@ function getConfigSnapshot(accountId) {
         fertilizerBuyNormalCount: Math.max(0, Math.min(999, Number(cfg.fertilizerBuyNormalCount) || 1)),
         fertilizerBuyNormalThresholdHours: Math.max(0, Math.min(720, Number(cfg.fertilizerBuyNormalThresholdHours) || 10)),
         fertilizerBuyCheckIntervalMinutes: Math.max(1, Math.min(1440, Number(cfg.fertilizerBuyCheckIntervalMinutes) || 60)),
+        goldenBugKeepCount: Math.max(0, Math.min(9999, Number(cfg.goldenBugKeepCount) || 0)),
+        goldenBugRoundLimit: Math.max(1, Math.min(100, Number(cfg.goldenBugRoundLimit) || 24)),
         ui
     };
 }
@@ -1119,6 +1135,12 @@ function applyConfigSnapshot(patch = {}, opts = {}) {
     }
     if (patch.autoAcceptFriendMinLevel !== undefined && patch.autoAcceptFriendMinLevel !== null) {
         cfg.autoAcceptFriendMinLevel = Math.max(0, Math.min(200, Number(patch.autoAcceptFriendMinLevel) || 0));
+    }
+    if (patch.goldenBugKeepCount !== undefined && patch.goldenBugKeepCount !== null) {
+        cfg.goldenBugKeepCount = Math.max(0, Math.min(9999, Number(patch.goldenBugKeepCount) || 0));
+    }
+    if (patch.goldenBugRoundLimit !== undefined && patch.goldenBugRoundLimit !== null) {
+        cfg.goldenBugRoundLimit = Math.max(1, Math.min(100, Number(patch.goldenBugRoundLimit) || 24));
     }
     if (patch.bagSeedPriority !== undefined && patch.bagSeedPriority !== null) {
         cfg.bagSeedPriority = normalizeBagSeedPriority(patch.bagSeedPriority);

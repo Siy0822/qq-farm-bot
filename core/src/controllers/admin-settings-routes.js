@@ -69,6 +69,9 @@ async function sendOfflineReminderTest(config) {
 }
 
 function buildSettingsPayload(store, accountId, currentUser) {
+  const accountConfig = accountId && typeof store.getConfigSnapshot === "function"
+    ? store.getConfigSnapshot(accountId)
+    : {};
   const offlineReminderDefault = {
     smtpHost: "",
     smtpPort: 465,
@@ -127,6 +130,8 @@ function buildSettingsPayload(store, accountId, currentUser) {
       typeof store.getFertilizerBuyCheckIntervalMinutes === "function"
         ? store.getFertilizerBuyCheckIntervalMinutes(accountId)
         : 30,
+    goldenBugKeepCount: Number(accountConfig.goldenBugKeepCount) || 0,
+    goldenBugRoundLimit: Number(accountConfig.goldenBugRoundLimit) || 24,
     autoAcceptFriendMinLevel:
       accountId && typeof store.getAutoAcceptFriendMinLevel === "function"
         ? store.getAutoAcceptFriendMinLevel(accountId)

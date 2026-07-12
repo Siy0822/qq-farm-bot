@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package gamepb.plantpb;
 
+import "corepb.proto";
+
 // ============ 生长阶段枚举 ============
 enum PlantPhase {
     PHASE_UNKNOWN = 0;
@@ -78,6 +80,21 @@ message PlantInfo {
     int64 steal_intimacy_level = 19;           // 偷菜亲密度等级
     repeated int64 mutant_config_ids = 20;     // 变异配置ID
     bool is_nudged = 21;                       // 是否被催熟
+    repeated SocialItem social_items = 35;      // 好友放置的背包型社交道具
+}
+
+// 背包型社交道具。字段含义依据 2026-07-12 黄金虫抓包。
+message SocialItem {
+    int64 item_id = 1;
+    int64 count = 2;
+    int64 type = 3;
+    int64 owner_gid = 4;
+    int64 created_at = 5;
+}
+
+message SocialItemResult {
+    int64 land_id = 1;
+    repeated corepb.Item items = 2;
 }
 
 // ============ 生长阶段详情 ============
@@ -165,6 +182,7 @@ message FarmingRequest {
 message FarmingReply {
     repeated LandInfo land = 1;
     repeated OperationLimit operation_limits = 2;
+    repeated SocialItemResult social_rewards = 3;
 }
 
 // --- 除草 ---
@@ -248,6 +266,21 @@ message PutWeedsRequest {
 message PutWeedsReply {
     repeated LandInfo land = 1;
     repeated OperationLimit operation_limits = 2;
+}
+
+// --- 放置背包型社交道具（黄金虫等） ---
+message PutSocialItemRequest {
+    int64 host_gid = 1;
+    repeated int64 land_ids = 2;
+    int64 item_id = 3;
+    int64 social_type = 5;
+}
+
+message PutSocialItemReply {
+    repeated LandInfo land = 1;
+    repeated OperationLimit operation_limits = 2;
+    repeated SocialItemResult rewards = 3;
+    repeated SocialItemResult costs = 4;
 }
 
 // --- 升级土地 ---

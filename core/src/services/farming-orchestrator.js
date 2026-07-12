@@ -79,6 +79,7 @@ async function runFarmOperation(opType) {
   if (analysis.harvestable.length) labels.push(`收:${  analysis.harvestable.length}`);
   if (analysis.needWeed.length) labels.push(`草:${  analysis.needWeed.length}`);
   if (analysis.needBug.length) labels.push(`虫:${  analysis.needBug.length}`);
+  if (analysis.needGoldenBug.length) labels.push(`金虫:${  analysis.needGoldenBug.length}`);
   if (analysis.needWater.length) labels.push(`水:${  analysis.needWater.length}`);
   if (analysis.dead.length) labels.push(`枯:${  analysis.dead.length}`);
   if (analysis.empty.length) labels.push(`空:${  analysis.empty.length}`);
@@ -91,15 +92,25 @@ async function runFarmOperation(opType) {
   // ── 一键务农（浇水/除草/除虫）──
   if (opType === 'all' || opType === 'clear') {
     const skipOwnWeedBug = opType === 'all' && isAutomationOn('skip_own_weed_bug');
-    const farmingLandIds = [...new Set([...analysis.needWeed, ...analysis.needBug, ...analysis.needWater])];
+    const ordinaryLandIds = skipOwnWeedBug
+      ? [...analysis.needWater]
+      : [...analysis.needWeed, ...analysis.needBug, ...analysis.needWater];
+    const goldenBugLandIds = isAutomationOn('golden_bug_clear')
+      ? analysis.needGoldenBug
+      : [];
+    const farmingLandIds = [...new Set([...ordinaryLandIds, ...goldenBugLandIds])];
 
-    if (farmingLandIds.length > 0 && !skipOwnWeedBug) {
+    if (farmingLandIds.length > 0) {
       try {
         await farming(farmingLandIds);
         const parts = [];
-        if (analysis.needWeed.length > 0) parts.push(`草${analysis.needWeed.length}`);
-        if (analysis.needBug.length > 0) parts.push(`虫${analysis.needBug.length}`);
+        if (!skipOwnWeedBug && analysis.needWeed.length > 0) parts.push(`草${analysis.needWeed.length}`);
+        if (!skipOwnWeedBug && analysis.needBug.length > 0) parts.push(`虫${analysis.needBug.length}`);
         if (analysis.needWater.length > 0) parts.push(`水${analysis.needWater.length}`);
+        if (goldenBugLandIds.length > 0) {
+          parts.push(`黄金虫${goldenBugLandIds.length}`);
+          recordOperation('goldenBugClear', goldenBugLandIds.length);
+        }
         actions.push(`一键务农${parts.join('/')}`);
         recordOperation('farming', farmingLandIds.length);
       } catch (err) { logWarn('一键务农', err.message); }

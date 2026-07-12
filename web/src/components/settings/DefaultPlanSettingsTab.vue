@@ -74,7 +74,9 @@ function createAutomationSettings() {
       friend_steal: false,
       friend_help: false,
       friend_bad: false,
+      friend_golden_bug: false,
       friend_help_exp_limit: false,
+      golden_bug_clear: true,
       fertilizer_gift: false,
       fertilizer_buy_organic: false,
       fertilizer_buy_normal: false,
@@ -90,6 +92,8 @@ function createAutomationSettings() {
     fertilizerBuyNormalCount: 1,
     fertilizerBuyNormalThresholdHours: 10,
     fertilizerBuyCheckIntervalMinutes: 60,
+    goldenBugKeepCount: 0,
+    goldenBugRoundLimit: 24,
   }
 }
 

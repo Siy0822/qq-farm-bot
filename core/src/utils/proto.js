@@ -82,6 +82,8 @@ async function loadProto() {
     types.PutInsectsReply = root.lookupType('gamepb.plantpb.PutInsectsReply');
     types.PutWeedsRequest = root.lookupType('gamepb.plantpb.PutWeedsRequest');
     types.PutWeedsReply = root.lookupType('gamepb.plantpb.PutWeedsReply');
+    types.PutSocialItemRequest = root.lookupType('gamepb.plantpb.PutSocialItemRequest');
+    types.PutSocialItemReply = root.lookupType('gamepb.plantpb.PutSocialItemReply');
     types.UpgradeLandRequest = root.lookupType('gamepb.plantpb.UpgradeLandRequest');
     types.UpgradeLandReply = root.lookupType('gamepb.plantpb.UpgradeLandReply');
     types.UnlockLandRequest = root.lookupType('gamepb.plantpb.UnlockLandRequest');

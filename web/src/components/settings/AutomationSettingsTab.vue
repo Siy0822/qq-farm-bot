@@ -15,7 +15,9 @@ interface AutomationSettings {
     friend_steal: boolean
     friend_help: boolean
     friend_bad: boolean
+    friend_golden_bug: boolean
     friend_help_exp_limit: boolean
+    golden_bug_clear: boolean
     fertilizer_gift: boolean
     fertilizer_buy_organic: boolean
     fertilizer_buy_normal: boolean
@@ -31,6 +33,8 @@ interface AutomationSettings {
   fertilizerBuyNormalCount: number
   fertilizerBuyNormalThresholdHours: number
   fertilizerBuyCheckIntervalMinutes: number
+  goldenBugKeepCount: number
+  goldenBugRoundLimit: number
 }
 
 interface AutoCodeRefreshConfig {
@@ -101,6 +105,7 @@ function isFastMatureFertilizerMode(mode: string) {
         <BaseSwitch v-model="settings.automation.fertilizer_buy_organic" label="自动购买有机化肥" />
         <BaseSwitch v-model="settings.automation.fertilizer_buy_normal" label="自动购买无机化肥" />
         <BaseSwitch v-model="settings.automation.skip_own_weed_bug" label="不除自己草虫" />
+        <BaseSwitch v-model="settings.automation.golden_bug_clear" label="自动清除黄金虫" />
       </div>
 
       <div class="border border-gray-200 rounded bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/20">
@@ -209,7 +214,25 @@ function isFastMatureFertilizerMode(mode: string) {
         <BaseSwitch v-model="settings.automation.friend_steal" label="自动偷菜" />
         <BaseSwitch v-model="settings.automation.friend_help" label="自动帮忙" />
         <BaseSwitch v-model="settings.automation.friend_bad" label="自动捣乱" />
+        <BaseSwitch v-model="settings.automation.friend_golden_bug" label="自动放黄金虫" />
         <BaseSwitch v-model="settings.automation.friend_help_exp_limit" label="经验满只帮护主犬" />
+      </div>
+
+      <div v-if="settings.automation.friend && settings.automation.friend_golden_bug" class="grid grid-cols-1 gap-3 rounded bg-amber-50 p-3 text-sm md:grid-cols-2 dark:bg-amber-900/20">
+        <BaseInput
+          v-model.number="settings.goldenBugKeepCount"
+          label="黄金虫保留数量"
+          type="number"
+          min="0"
+          max="9999"
+        />
+        <BaseInput
+          v-model.number="settings.goldenBugRoundLimit"
+          label="黄金虫单轮上限"
+          type="number"
+          min="1"
+          max="100"
+        />
       </div>
 
       <div v-if="settings.automation.friend" class="rounded bg-sky-50 p-3 text-sm dark:bg-sky-900/20">

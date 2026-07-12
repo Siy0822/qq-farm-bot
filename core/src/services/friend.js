@@ -8,6 +8,7 @@ const {
   fetchFriendsDogInfo,
 } = require('./friend-land-analyzer');
 const { doFriendOperation } = require('./friend-visit');
+const { runGoldenBugPlacement } = require('./golden-bug-service');
 const {
   checkFriends,
   startFriendCheckLoop,
@@ -25,6 +26,7 @@ module.exports = {
   stopFriendCheckLoop,
   refreshFriendCheckLoop,
   runBadOnceOnStartup,
+  runGoldenBugPlacement,
   isHelpExpLimitReached,
   getOperationLimits,
   getFriendsList,

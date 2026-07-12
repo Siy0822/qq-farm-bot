@@ -13,6 +13,7 @@ let localBadOperationCount = 0;
 
 const PUT_BUG_OPERATION_ID = 10005;
 const PUT_WEED_OPERATION_ID = 10006;
+const GOLDEN_BUG_OPERATION_ID = 10015;
 const BAD_DAILY_LIMIT = 100;
 
 // ===== Operation type names =====
@@ -25,6 +26,7 @@ const OP_NAMES = {
   '10006': '给好友放草',
   '10007': '帮好友复活',
   '10008': '好友帮忙浇水',
+  '10015': '给好友放黄金虫',
 };
 
 // ===== Daily reset =====
@@ -179,7 +181,7 @@ function recordBadOperationSuccess(count) {
  */
 function getOperationLimits() {
   const result = {};
-  const allIds = [10001, 10002, 10003, 10004, 10005, 10006, 10007, 10008];
+  const allIds = [10001, 10002, 10003, 10004, 10005, 10006, 10007, 10008, 10015];
   for (const id of allIds) {
     const limit = operationLimits.get(id);
     if (limit) {
@@ -443,6 +445,7 @@ module.exports = {
   OP_NAMES,
   PUT_BUG_OPERATION_ID,
   PUT_WEED_OPERATION_ID,
+  GOLDEN_BUG_OPERATION_ID,
   BAD_DAILY_LIMIT,
   checkDailyReset,
   autoDisableHelpByExpLimit,

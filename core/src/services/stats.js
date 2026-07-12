@@ -45,6 +45,8 @@ const operations = {
   helpWater: 0,
   helpWeed: 0,
   helpBug: 0,
+  goldenBugClear: 0,
+  goldenBugPut: 0,
   taskClaim: 0,
   sell: 0,
   upgrade: 0,

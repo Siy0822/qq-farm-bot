@@ -199,6 +199,8 @@ const OP_META: Record<string, { label: string, icon: string, color: string }> = 
   plant: { label: '种植', icon: 'i-carbon-tree', color: 'text-lime-500' },
   steal: { label: '偷菜', icon: 'i-carbon-run', color: 'text-orange-500' },
   helpWater: { label: '帮浇水', icon: 'i-carbon-rain-drop', color: 'text-blue-300' },
+  goldenBugClear: { label: '清黄金虫', icon: 'i-carbon-clean', color: 'text-amber-500' },
+  goldenBugPut: { label: '放黄金虫', icon: 'i-carbon-pest', color: 'text-yellow-500' },
   helpWeed: { label: '帮除草', icon: 'i-carbon-cut', color: 'text-yellow-400' },
   helpBug: { label: '帮除虫', icon: 'i-carbon-pest', color: 'text-red-300' },
   taskClaim: { label: '任务', icon: 'i-carbon-task-complete', color: 'text-indigo-500' },
@@ -473,7 +475,7 @@ useIntervalFn(updateCountdowns, 1000)
 <template>
   <div class="flex flex-col gap-5 pt-1 md:pt-2">
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-3 sm:grid-cols-2">
-      <div class="ui-card metric-card flex min-h-[168px] flex-col rounded-lg p-5">
+      <div class="ui-card metric-card min-h-[168px] flex flex-col rounded-lg p-5">
         <div class="mb-2 flex items-start justify-between">
           <div class="flex items-center gap-1.5 text-sm text-gray-500">
             <div class="i-fas-user-circle" />
@@ -507,7 +509,7 @@ useIntervalFn(updateCountdowns, 1000)
         </div>
       </div>
 
-      <div class="ui-card metric-card flex min-h-[168px] flex-col justify-between rounded-lg p-5">
+      <div class="ui-card metric-card min-h-[168px] flex flex-col justify-between rounded-lg p-5">
         <div class="flex justify-between">
           <div>
             <div class="flex items-center gap-1.5 text-xs text-gray-500">
@@ -565,7 +567,7 @@ useIntervalFn(updateCountdowns, 1000)
         </div>
       </div>
 
-      <div class="ui-card metric-card flex min-h-[168px] flex-col justify-between rounded-lg p-5">
+      <div class="ui-card metric-card min-h-[168px] flex flex-col justify-between rounded-lg p-5">
         <div class="mb-2 flex items-center gap-1.5 text-sm text-gray-500">
           <div class="i-fas-flask text-emerald-400" />
           化肥容器
