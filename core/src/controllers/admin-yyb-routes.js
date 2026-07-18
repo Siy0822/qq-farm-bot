@@ -91,6 +91,57 @@ function registerAdminYybRoutes({ app, requireAdminToken, sendProviderError }) {
     }
     res.json({ ok: true, data: { code, openid: data.openid || openid } });
   });
+
+  // ==================== 应用宝扫码登录 ====================
+  // 应用宝 QR 接口：创建会话 → 长轮询状态 → 确认授权 → 账号入库
+
+  // 创建扫码会话（返回 base64 二维码）
+  app.post("/api/yyb/qr/create", requireAdminToken, async (req, res) => {
+    const { apiBase, apiKey } = req.body || {};
+    const result = await callYybApi(apiBase, "/qr?as_base64=true", apiKey, { method: "POST" });
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error, yybCode: result.yybCode });
+    }
+    // data: { session_id, status, image_base64, image_url }
+    res.json({ ok: true, data: result.data });
+  });
+
+  // 长轮询扫码状态（前端需设较长 timeout，如 30s；后端给 65s 保护避免无限 hold）
+  app.post("/api/yyb/qr/poll", requireAdminToken, async (req, res) => {
+    const { apiBase, apiKey, sessionId } = req.body || {};
+    if (!sessionId) {
+      return res.status(400).json({ ok: false, error: "缺少 sessionId" });
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 65000);
+    try {
+      const result = await callYybApi(apiBase, `/qr/${encodeURIComponent(sessionId)}/poll`, apiKey, {
+        method: "GET",
+        signal: controller.signal,
+      });
+      if (!result.ok) {
+        return res.status(400).json({ ok: false, error: result.error, yybCode: result.yybCode });
+      }
+      // data: { status: pending|scanned|authorized|confirmed|expired|cancelled, errcode? }
+      res.json({ ok: true, data: result.data });
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+
+  // 确认授权（status=authorized 后调用，把账号保存到应用宝服务端）
+  app.post("/api/yyb/qr/confirm", requireAdminToken, async (req, res) => {
+    const { apiBase, apiKey, sessionId } = req.body || {};
+    if (!sessionId) {
+      return res.status(400).json({ ok: false, error: "缺少 sessionId" });
+    }
+    const result = await callYybApi(apiBase, `/qr/${encodeURIComponent(sessionId)}/confirm`, apiKey, { method: "POST" });
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error, yybCode: result.yybCode });
+    }
+    // confirm 成功后 data 里通常包含新账号信息（openid 等）
+    res.json({ ok: true, data: result.data });
+  });
 }
 
 module.exports = { registerAdminYybRoutes };

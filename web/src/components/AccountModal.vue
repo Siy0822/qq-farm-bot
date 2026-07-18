@@ -389,6 +389,7 @@ function close() {
   stopCaptureCheck()
   void cancelCaptureSession()
   wxLoginStore.resetState()
+  resetYybQr()
   showCaptureHelp.value = false
   emit('close')
 }
@@ -548,6 +549,123 @@ async function submitYybLogin() {
   } finally {
     yybLoginLoading.value = false
   }
+}
+
+// ==================== 应用宝扫码登录（添加新账号到应用宝） ====================
+const yybQrImage = ref('')           // base64 data URI
+const yybQrSessionId = ref('')
+const yybQrStatus = ref<'idle' | 'loading' | 'pending' | 'scanned' | 'authorizing' | 'success' | 'expired' | 'error'>('idle')
+const yybQrError = ref('')
+let yybQrPollTimer: ReturnType<typeof setTimeout> | null = null
+
+async function startYybQrLogin() {
+  if (!yybConfigured.value) {
+    yybQrError.value = '请先配置应用宝接口'
+    return
+  }
+  yybQrError.value = ''
+  yybQrImage.value = ''
+  yybQrSessionId.value = ''
+  yybQrStatus.value = 'loading'
+  try {
+    const { data } = await api.post('/api/yyb/qr/create', {
+      apiBase: yybApiBase.value.trim(),
+      apiKey: yybApiKey.value.trim(),
+    })
+    if (!data?.ok || !data?.data?.session_id) {
+      yybQrError.value = data?.error || '创建扫码会话失败'
+      yybQrStatus.value = 'error'
+      return
+    }
+    yybQrSessionId.value = data.data.session_id
+    yybQrImage.value = data.data.image_base64 || ''
+    yybQrStatus.value = 'pending'
+    // 开始轮询
+    pollYybQrStatus()
+  } catch (e: any) {
+    yybQrError.value = e?.response?.data?.error || e?.message || '创建扫码会话失败'
+    yybQrStatus.value = 'error'
+  }
+}
+
+async function pollYybQrStatus() {
+  if (!yybQrSessionId.value) return
+  if (yybQrStatus.value === 'success' || yybQrStatus.value === 'expired' || yybQrStatus.value === 'error') return
+  try {
+    const { data } = await api.post('/api/yyb/qr/poll', {
+      apiBase: yybApiBase.value.trim(),
+      apiKey: yybApiKey.value.trim(),
+      sessionId: yybQrSessionId.value,
+    }, { timeout: 60000 })  // 长轮询，前端等 60s
+    if (!data?.ok) {
+      yybQrError.value = data?.error || '轮询失败'
+      yybQrStatus.value = 'error'
+      return
+    }
+    const status = data.data?.status || 'unknown'
+    if (status === 'pending') {
+      // 继续轮询
+      yybQrPollTimer = setTimeout(pollYybQrStatus, 1000)
+    } else if (status === 'scanned') {
+      yybQrStatus.value = 'scanned'
+      pollYybQrStatus()
+    } else if (status === 'authorized') {
+      // 已授权，调 confirm 确认并保存账号到应用宝
+      yybQrStatus.value = 'authorizing'
+      await confirmYybQr()
+    } else if (status === 'confirmed') {
+      yybQrStatus.value = 'success'
+      // 刷新账号列表
+      await fetchYybAccounts()
+    } else if (status === 'expired' || status === 'cancelled') {
+      yybQrStatus.value = 'expired'
+      yybQrError.value = status === 'expired' ? '二维码已过期，请重新扫码' : '已取消'
+    } else {
+      // unknown 或其他，继续轮询
+      yybQrPollTimer = setTimeout(pollYybQrStatus, 2000)
+    }
+  } catch (e: any) {
+    // 超时或网络错误，继续重试
+    if (yybQrStatus.value !== 'success' && yybQrStatus.value !== 'expired') {
+      yybQrPollTimer = setTimeout(pollYybQrStatus, 2000)
+    }
+  }
+}
+
+async function confirmYybQr() {
+  try {
+    const { data } = await api.post('/api/yyb/qr/confirm', {
+      apiBase: yybApiBase.value.trim(),
+      apiKey: yybApiKey.value.trim(),
+      sessionId: yybQrSessionId.value,
+    })
+    if (data?.ok) {
+      yybQrStatus.value = 'success'
+      // 刷新账号列表
+      await fetchYybAccounts()
+    } else {
+      yybQrError.value = data?.error || '确认授权失败'
+      yybQrStatus.value = 'error'
+    }
+  } catch (e: any) {
+    yybQrError.value = e?.response?.data?.error || e?.message || '确认授权失败'
+    yybQrStatus.value = 'error'
+  }
+}
+
+function stopYybQrPoll() {
+  if (yybQrPollTimer) {
+    clearTimeout(yybQrPollTimer)
+    yybQrPollTimer = null
+  }
+}
+
+function resetYybQr() {
+  stopYybQrPoll()
+  yybQrImage.value = ''
+  yybQrSessionId.value = ''
+  yybQrStatus.value = 'idle'
+  yybQrError.value = ''
 }
 </script>
 
@@ -906,9 +1024,48 @@ async function submitYybLogin() {
               <span class="text-sm opacity-70" :style="{ color: 'var(--theme-text)' }">
                 接口：{{ yybApiBase }}
               </span>
-              <BaseButton variant="ghost" size="sm" :loading="yybAccountsLoading" @click="fetchYybAccounts">
-                刷新列表
-              </BaseButton>
+              <div class="flex gap-2">
+                <BaseButton variant="ghost" size="sm" @click="startYybQrLogin" :disabled="yybQrStatus === 'loading' || yybQrStatus === 'scanned' || yybQrStatus === 'authorizing'">
+                  {{ yybQrStatus === 'idle' ? '扫码添加新账号' : '重新扫码' }}
+                </BaseButton>
+                <BaseButton variant="ghost" size="sm" :loading="yybAccountsLoading" @click="fetchYybAccounts">
+                  刷新列表
+                </BaseButton>
+              </div>
+            </div>
+
+            <!-- 应用宝扫码区 -->
+            <div v-if="yybQrStatus !== 'idle'" class="rounded-lg border p-4 space-y-3" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 15%, transparent)' }">
+              <div class="flex items-center justify-between">
+                <span class="text-sm font-medium" :style="{ color: 'var(--theme-text)' }">
+                  应用宝扫码登录
+                </span>
+                <BaseButton v-if="yybQrStatus === 'pending' || yybQrStatus === 'scanned' || yybQrStatus === 'authorizing'" variant="ghost" size="sm" @click="resetYybQr">
+                  取消
+                </BaseButton>
+              </div>
+
+              <!-- 二维码图片 -->
+              <div v-if="yybQrImage && yybQrStatus !== 'success'" class="flex justify-center">
+                <img :src="yybQrImage" alt="应用宝二维码" class="max-w-[200px] w-full rounded">
+              </div>
+
+              <!-- 状态提示 -->
+              <div class="text-sm text-center" :style="{ color: 'var(--theme-text)' }">
+                <span v-if="yybQrStatus === 'loading'">正在生成二维码...</span>
+                <span v-else-if="yybQrStatus === 'pending'" class="opacity-70">请使用应用宝扫描二维码</span>
+                <span v-else-if="yybQrStatus === 'scanned'" class="text-green-500">已扫描，请在手机上确认授权</span>
+                <span v-else-if="yybQrStatus === 'authorizing'" class="opacity-70">正在确认授权...</span>
+                <span v-else-if="yybQrStatus === 'success'" class="text-green-500">✓ 授权成功，账号已添加到应用宝</span>
+                <span v-else-if="yybQrStatus === 'expired'" class="text-red-500">{{ yybQrError || '二维码已过期' }}</span>
+                <span v-else-if="yybQrStatus === 'error'" class="text-red-500">{{ yybQrError }}</span>
+              </div>
+
+              <div v-if="yybQrStatus === 'success'" class="text-center">
+                <BaseButton variant="primary" size="sm" @click="resetYybQr">
+                  完成
+                </BaseButton>
+              </div>
             </div>
 
             <BaseInput
