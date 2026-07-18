@@ -156,9 +156,9 @@ function closeMorePanel() {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
   margin: 0 12px 14px 12px;
-  padding: 6px 8px;
+  padding: 4px 8px;
   max-width: calc(100vw - 24px);
   border-radius: 24px;
   /* 鸿蒙式强毛玻璃：更通透 */
@@ -187,8 +187,8 @@ function closeMorePanel() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 8px 14px;
+  gap: 1px;
+  padding: 5px 14px;
   min-width: 60px;
   border-radius: 16px;
   color: var(--theme-text);
@@ -250,7 +250,7 @@ function closeMorePanel() {
 }
 
 .dock-item-icon {
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1;
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
@@ -267,7 +267,7 @@ function closeMorePanel() {
 }
 
 .dock-item-label {
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1.2;
   font-weight: 500;
   white-space: nowrap;
@@ -421,18 +421,18 @@ function closeMorePanel() {
 @media (max-width: 640px) {
   .floating-dock {
     gap: 0;
-    padding: 5px 6px;
+    padding: 3px 6px;
     margin: 0 8px 10px 8px;
     border-radius: 18px;
   }
 
   .dock-item {
     min-width: 52px;
-    padding: 7px 10px;
+    padding: 5px 10px;
   }
 
   .dock-item-icon {
-    font-size: 24px;
+    font-size: 22px;
   }
 
   .more-panel {
