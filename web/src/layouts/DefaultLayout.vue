@@ -2,6 +2,7 @@
 import { storeToRefs } from 'pinia'
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import MysteryMerchantBanner from '@/components/shop/MysteryMerchantBanner.vue'
+import FloatingDock from '@/components/FloatingDock.vue'
 import Sidebar from '@/components/Sidebar.vue'
 import TopAccountMenu from '@/components/TopAccountMenu.vue'
 import { useAppStore } from '@/stores/app'
@@ -25,18 +26,25 @@ watch(() => loginPageConfig.value.logoUrl, () => {
 
 <template>
   <div class="w-screen flex overflow-hidden bg-gray-50 dark:bg-gray-900" style="height: 100dvh;">
-    <!-- Mobile Sidebar Overlay -->
+    <!-- 移动端用户菜单抽屉（保留 Sidebar 用于用户信息/令牌/续费） -->
     <div
       v-if="sidebarOpen"
       class="fixed inset-0 z-40 bg-gray-950/55 backdrop-blur-md transition-opacity lg:hidden"
       @click="appStore.closeSidebar"
     />
 
-    <Sidebar />
+    <!-- 移动端抽屉式 Sidebar（用户菜单入口，桌面端隐藏） -->
+    <div
+      class="fixed inset-y-0 left-0 z-50 h-full transition-transform duration-300 lg:hidden"
+      :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
+    >
+      <Sidebar />
+    </div>
 
     <main class="relative h-full min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden">
       <header class="glass-panel relative z-30 mx-2 mt-2 h-16 flex shrink-0 items-center justify-between rounded-lg px-4 md:mx-4 md:mt-4 md:px-5">
         <div class="min-w-0 flex items-center gap-3">
+          <!-- 移动端汉堡菜单（唤出用户抽屉） -->
           <button
             class="h-9 w-9 flex items-center justify-center rounded-lg text-gray-500 transition lg:hidden hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
             @click="appStore.toggleSidebar"
@@ -61,10 +69,10 @@ watch(() => loginPageConfig.value.logoUrl, () => {
         <TopAccountMenu />
       </header>
 
-      <!-- Main Content Area -->
+      <!-- 主内容区（底部留出 Dock 空间） -->
       <div class="min-h-0 flex flex-1 flex-col overflow-hidden">
         <MysteryMerchantBanner />
-        <div class="custom-scrollbar min-h-0 flex flex-1 flex-col overflow-y-auto p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] md:p-6 sm:p-4 md:pb-6 sm:pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        <div class="custom-scrollbar min-h-0 flex flex-1 flex-col overflow-y-auto p-3 pb-[calc(5rem+env(safe-area-inset-bottom))] md:p-6 sm:p-4 md:pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
           <RouterView v-slot="{ Component, route }">
             <Transition name="slide-fade" mode="out-in">
               <component :is="Component" :key="route.path" />
@@ -73,6 +81,9 @@ watch(() => loginPageConfig.value.logoUrl, () => {
         </div>
       </div>
     </main>
+
+    <!-- 底部悬浮导航 Dock（鸿蒙式沉浸光感） -->
+    <FloatingDock />
   </div>
 </template>
 
