@@ -44,41 +44,28 @@ async function runBatchWithFallback(landIds, batchFn, singleFn) {
   const ids = Array.isArray(landIds) ? landIds.filter(Boolean) : [];
   if (ids.length === 0) return 0;
 
-  try {
-    await batchFn(ids);
-    return ids.length;
-  } catch (batchErr) {
-    // Fallback: one by one
-    let ok = 0;
-    for (const id of ids) {
-      try {
-        await singleFn([id]);
-        ok++;
-      } catch (singleErr) {
-        const msg = singleErr && singleErr.message ? singleErr.message : String(singleErr);
-        // 次数用完类错误，记录方便排查（不完全静默）
-        if (!msg.includes('1001046') && !msg.includes('used up')) {
-          logWarn('好友', `批量操作单块失败: ${msg}`, {
-            module: 'friend',
-            event: 'batch_fallback_single_fail',
-            error: msg,
-          });
-        }
+  // 逐块调用但不批量——服务端对批量 land_ids 的处理不可靠（可能部分成功），
+  // 逐块调用能精确知道每块是否成功，统计准确。
+  // 性能影响小（帮忙/偷菜的地块数通常 < 10）。
+  let ok = 0;
+  for (const id of ids) {
+    try {
+      await singleFn([id]);
+      ok++;
+    } catch (singleErr) {
+      const msg = singleErr && singleErr.message ? singleErr.message : String(singleErr);
+      // 次数用完类错误静默跳过，其他记录方便排查
+      if (!msg.includes('1001046') && !msg.includes('used up')) {
+        logWarn('好友', `操作失败: ${msg}`, {
+          module: 'friend',
+          event: 'operation_single_fail',
+          error: msg,
+        });
       }
-      await sleep(100);
     }
-    // 如果全部失败，记录批量错误信息
-    if (ok === 0) {
-      const batchMsg = batchErr && batchErr.message ? batchErr.message : String(batchErr);
-      logWarn('好友', `批量操作全部失败: ${batchMsg}`, {
-        module: 'friend',
-        event: 'batch_all_failed',
-        error: batchMsg,
-        landCount: ids.length,
-      });
-    }
-    return ok;
+    await sleep(100);
   }
+  return ok;
 }
 
 // ===== 狗信息随巡查收集 =====
@@ -435,30 +422,20 @@ async function visitFriend(friend, tally, myGid, accountId) {
   // ---- Steal ----
   if (isAutomationOn('friend_steal') && analysis.stealable.length > 0) {
     // 去掉 checkCanOperateRemote 预检查，直接偷取全部可偷地块
-    // 服务端 Harvest(is_all=true) 会自行截断可偷数量
+    // 逐块偷取，统计准确
     let stolen = 0;
     const stolenNames = [];
 
-    try {
-      await stealHarvest(gid, analysis.stealable);
-      stolen = analysis.stealable.length;
-      analysis.stealable.forEach(landId => {
+    for (const landId of analysis.stealable) {
+      try {
+        await stealHarvest(gid, [landId]);
+        stolen++;
         const info = analysis.stealableInfo.find(s => s.landId === landId);
         if (info) stolenNames.push(info.name);
-      });
-    } catch (_) {
-      // Fallback: steal one by one
-      for (const landId of analysis.stealable) {
-        try {
-          await stealHarvest(gid, [landId]);
-          stolen++;
-          const info = analysis.stealableInfo.find(s => s.landId === landId);
-          if (info) stolenNames.push(info.name);
-        } catch (_) {
-          // Skip individual failures
-        }
-        await randomDelay(50, 100);
+      } catch (_) {
+        // Skip individual failures
       }
+      await randomDelay(50, 100);
     }
 
     if (stolen > 0) {
@@ -601,30 +578,21 @@ async function visitFriendForSteal(friend, tally, myGid, accountId) {
     return { acted: false, entered: true };
   }
 
-  // Steal（去掉 checkCanOperateRemote 预检查，直接偷取全部可偷地块）
+  // Steal（逐块偷取，统计准确）
   if (analysis.stealable.length > 0) {
     let stolen = 0;
     const stolenNames = [];
 
-    try {
-      await stealHarvest(gid, analysis.stealable);
-      stolen = analysis.stealable.length;
-      analysis.stealable.forEach(landId => {
+    for (const landId of analysis.stealable) {
+      try {
+        await stealHarvest(gid, [landId]);
+        stolen++;
         const info = analysis.stealableInfo.find(s => s.landId === landId);
         if (info) stolenNames.push(info.name);
-      });
-    } catch (_) {
-      for (const landId of analysis.stealable) {
-        try {
-          await stealHarvest(gid, [landId]);
-          stolen++;
-          const info = analysis.stealableInfo.find(s => s.landId === landId);
-          if (info) stolenNames.push(info.name);
-        } catch (_) {
-          // Skip individual failures
-        }
-        await randomDelay(50, 100);
+      } catch (_) {
+        // Skip individual failures
       }
+      await randomDelay(50, 100);
     }
 
     if (stolen > 0) {

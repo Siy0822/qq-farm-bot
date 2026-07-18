@@ -233,9 +233,16 @@ async function helpWater(gid, landIds, checkExpLimit = false) {
   updateOperationLimits(reply.operation_limits);
 
   if (checkExpLimit) {
-    await sleep(200);
-    const expAfter = toNum((getUserState() || {}).exp);
-    if (expAfter <= expBefore) autoDisableHelpByExpLimit();
+    // 修复：不再用 expAfter <= expBefore 猜测经验是否满（网络延迟/操作无收益都会误判），
+    // 改为直接检查服务端 operation_limits 里该操作的经验次数是否已达上限。
+    const opId = toNum(gid); // 占位，实际用 operation_limits 里的 id
+    // helpWater=10007, helpWeed=10005, helpBug=10006
+    // 检查所有帮忙操作的经验是否都满了
+    const allHelpExpIds = [0x2715, 0x2713, 0x2716, 0x2712, 0x2717, 0x2711];
+    const anyExpLeft = allHelpExpIds.some(id => canGetExp(id));
+    if (!anyExpLeft) {
+      autoDisableHelpByExpLimit();
+    }
   }
 
   return reply;
@@ -261,9 +268,16 @@ async function helpWeed(gid, landIds, checkExpLimit = false) {
   updateOperationLimits(reply.operation_limits);
 
   if (checkExpLimit) {
-    await sleep(200);
-    const expAfter = toNum((getUserState() || {}).exp);
-    if (expAfter <= expBefore) autoDisableHelpByExpLimit();
+    // 修复：不再用 expAfter <= expBefore 猜测经验是否满（网络延迟/操作无收益都会误判），
+    // 改为直接检查服务端 operation_limits 里该操作的经验次数是否已达上限。
+    const opId = toNum(gid); // 占位，实际用 operation_limits 里的 id
+    // helpWater=10007, helpWeed=10005, helpBug=10006
+    // 检查所有帮忙操作的经验是否都满了
+    const allHelpExpIds = [0x2715, 0x2713, 0x2716, 0x2712, 0x2717, 0x2711];
+    const anyExpLeft = allHelpExpIds.some(id => canGetExp(id));
+    if (!anyExpLeft) {
+      autoDisableHelpByExpLimit();
+    }
   }
 
   return reply;
@@ -289,9 +303,16 @@ async function helpInsecticide(gid, landIds, checkExpLimit = false) {
   updateOperationLimits(reply.operation_limits);
 
   if (checkExpLimit) {
-    await sleep(200);
-    const expAfter = toNum((getUserState() || {}).exp);
-    if (expAfter <= expBefore) autoDisableHelpByExpLimit();
+    // 修复：不再用 expAfter <= expBefore 猜测经验是否满（网络延迟/操作无收益都会误判），
+    // 改为直接检查服务端 operation_limits 里该操作的经验次数是否已达上限。
+    const opId = toNum(gid); // 占位，实际用 operation_limits 里的 id
+    // helpWater=10007, helpWeed=10005, helpBug=10006
+    // 检查所有帮忙操作的经验是否都满了
+    const allHelpExpIds = [0x2715, 0x2713, 0x2716, 0x2712, 0x2717, 0x2711];
+    const anyExpLeft = allHelpExpIds.some(id => canGetExp(id));
+    if (!anyExpLeft) {
+      autoDisableHelpByExpLimit();
+    }
   }
 
   return reply;
