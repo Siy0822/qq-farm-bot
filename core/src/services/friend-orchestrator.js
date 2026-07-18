@@ -62,6 +62,10 @@ function clearCachedFriendsList() {
   friendsListCacheState = { reply: null, expireAt: 0 };
 }
 
+// 护主犬好友"帮助无效果"冷却：避免列表快照过期导致反复尝试
+const guardDogNoEffectCooldown = new Map(); // gid → expireAt
+const GUARD_DOG_NO_EFFECT_COOLDOWN_MS = 5 * 60 * 1000; // 5 分钟
+
 async function getCachedFriendsList(forceRefresh = false) {
   const now = Date.now();
   if (!forceRefresh && friendsListCacheState.reply && now < friendsListCacheState.expireAt) {
@@ -312,11 +316,19 @@ async function checkFriends(options = {}) {
     if (doHelp) {
       if (helpExpReached && guardDogGidSet.size > 0) {
         // Experience limit reached — only help guard dog friends
+        const now = Date.now();
+        // 清理过期冷却
+        for (const [k, v] of guardDogNoEffectCooldown.entries()) {
+          if (v <= now) guardDogNoEffectCooldown.delete(k);
+        }
+
         for (const friend of rawFriends) {
           const gid = toNum(friend.gid);
           if (gid === userState.gid) continue;
           if (!guardDogGidSet.has(gid)) continue;
           if (blacklist.has(gid)) continue;
+          // 跳过冷却中的好友（上一轮帮助无效果，列表快照可能过期）
+          if (guardDogNoEffectCooldown.has(gid)) continue;
 
           const name = friend.remark || friend.name || `GID:${gid}`;
           const plant = friend.plant;
@@ -411,10 +423,14 @@ async function checkFriends(options = {}) {
     if (helpTargets.length > 0 && doHelp) {
       for (const target of helpTargets) {
         try {
-          await visitFriendForHelp(
+          const result = await visitFriendForHelp(
             target, tally, userState.gid, userState.accountId,
             ignoreExpLimit, helpExpReached
           );
+          // 护主犬好友帮助无效果（列表快照过期），加冷却避免反复尝试
+          if (helpExpReached && target.hasGuardDog && result && !result.acted) {
+            guardDogNoEffectCooldown.set(toNum(target.gid), Date.now() + GUARD_DOG_NO_EFFECT_COOLDOWN_MS);
+          }
         } catch {
           // Skip individual failures
         }

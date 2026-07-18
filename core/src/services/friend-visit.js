@@ -47,17 +47,35 @@ async function runBatchWithFallback(landIds, batchFn, singleFn) {
   try {
     await batchFn(ids);
     return ids.length;
-  } catch (_) {
+  } catch (batchErr) {
     // Fallback: one by one
     let ok = 0;
     for (const id of ids) {
       try {
         await singleFn([id]);
         ok++;
-      } catch (_) {
-        // Skip individual failures
+      } catch (singleErr) {
+        const msg = singleErr && singleErr.message ? singleErr.message : String(singleErr);
+        // 次数用完类错误，记录方便排查（不完全静默）
+        if (!msg.includes('1001046') && !msg.includes('used up')) {
+          logWarn('好友', `批量操作单块失败: ${msg}`, {
+            module: 'friend',
+            event: 'batch_fallback_single_fail',
+            error: msg,
+          });
+        }
       }
       await sleep(100);
+    }
+    // 如果全部失败，记录批量错误信息
+    if (ok === 0) {
+      const batchMsg = batchErr && batchErr.message ? batchErr.message : String(batchErr);
+      logWarn('好友', `批量操作全部失败: ${batchMsg}`, {
+        module: 'friend',
+        event: 'batch_all_failed',
+        error: batchMsg,
+        landCount: ids.length,
+      });
     }
     return ok;
   }
@@ -755,6 +773,17 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
       friendName: name,
       friendGid: gid,
       actions: actionLogs,
+    });
+  } else if (expLimitMode && hasGuardDog) {
+    // 护主犬好友但所有操作都没成功，记录原因方便排查
+    logWarn('好友', `[护主犬好友] ${name}: 进入农场但无有效操作（可能土地状态已变或次数用完）`, {
+      module: 'friend',
+      event: '护主犬好友帮助无效果',
+      friendName: name,
+      friendGid: gid,
+      needWater: analysis.needWater.length,
+      needWeed: analysis.needWeed.length,
+      needBug: analysis.needBug.length,
     });
   }
 
