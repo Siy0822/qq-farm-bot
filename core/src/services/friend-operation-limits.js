@@ -234,10 +234,8 @@ async function helpWater(gid, landIds, checkExpLimit = false) {
 
   if (checkExpLimit) {
     // 修复：不再用 expAfter <= expBefore 猜测经验是否满（网络延迟/操作无收益都会误判），
-    // 改为直接检查服务端 operation_limits 里该操作的经验次数是否已达上限。
-    const opId = toNum(gid); // 占位，实际用 operation_limits 里的 id
-    // helpWater=10007, helpWeed=10005, helpBug=10006
-    // 检查所有帮忙操作的经验是否都满了
+    // 改为直接检查服务端 operation_limits 里所有帮忙操作的经验次数是否都达上限。
+    // helpWater=10007, helpWeed=10005, helpBug=10006 及其配对 id
     const allHelpExpIds = [0x2715, 0x2713, 0x2716, 0x2712, 0x2717, 0x2711];
     const anyExpLeft = allHelpExpIds.some(id => canGetExp(id));
     if (!anyExpLeft) {
@@ -269,10 +267,8 @@ async function helpWeed(gid, landIds, checkExpLimit = false) {
 
   if (checkExpLimit) {
     // 修复：不再用 expAfter <= expBefore 猜测经验是否满（网络延迟/操作无收益都会误判），
-    // 改为直接检查服务端 operation_limits 里该操作的经验次数是否已达上限。
-    const opId = toNum(gid); // 占位，实际用 operation_limits 里的 id
-    // helpWater=10007, helpWeed=10005, helpBug=10006
-    // 检查所有帮忙操作的经验是否都满了
+    // 改为直接检查服务端 operation_limits 里所有帮忙操作的经验次数是否都达上限。
+    // helpWater=10007, helpWeed=10005, helpBug=10006 及其配对 id
     const allHelpExpIds = [0x2715, 0x2713, 0x2716, 0x2712, 0x2717, 0x2711];
     const anyExpLeft = allHelpExpIds.some(id => canGetExp(id));
     if (!anyExpLeft) {
@@ -304,10 +300,8 @@ async function helpInsecticide(gid, landIds, checkExpLimit = false) {
 
   if (checkExpLimit) {
     // 修复：不再用 expAfter <= expBefore 猜测经验是否满（网络延迟/操作无收益都会误判），
-    // 改为直接检查服务端 operation_limits 里该操作的经验次数是否已达上限。
-    const opId = toNum(gid); // 占位，实际用 operation_limits 里的 id
-    // helpWater=10007, helpWeed=10005, helpBug=10006
-    // 检查所有帮忙操作的经验是否都满了
+    // 改为直接检查服务端 operation_limits 里所有帮忙操作的经验次数是否都达上限。
+    // helpWater=10007, helpWeed=10005, helpBug=10006 及其配对 id
     const allHelpExpIds = [0x2715, 0x2713, 0x2716, 0x2712, 0x2717, 0x2711];
     const anyExpLeft = allHelpExpIds.some(id => canGetExp(id));
     if (!anyExpLeft) {
