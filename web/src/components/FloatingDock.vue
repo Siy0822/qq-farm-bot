@@ -9,17 +9,19 @@ const router = useRouter()
 const userStore = useUserStore()
 
 // 一级导航：概览 / 个人 / 好友 / 活动
+const primaryNames = ['dashboard', 'personal', 'friends', 'activity']
 const primaryItems = computed(() => {
-  const primaryNames = ['dashboard', 'personal', 'friends', 'activity']
   return menuRoutes.filter(item => primaryNames.includes(item.name))
 })
 
-// 二级导航（更多面板）：商城 / 图鉴 / 分析 / 设置 / 后台
+// 二级导航（更多面板）：显式声明的 + 兜底（不在一级里的全部自动归入二级）
 const secondaryItems = computed(() => {
-  const secondaryNames = ['shop', 'illustrated', 'analytics', 'Settings', 'admin']
   return menuRoutes.filter(item => {
+    // 一级已显示的不再重复
+    if (primaryNames.includes(item.name)) return false
+    // adminOnly 对非管理员隐藏
     if (item.adminOnly && !userStore.isAdmin) return false
-    return secondaryNames.includes(item.name)
+    return true
   })
 })
 
