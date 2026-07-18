@@ -151,16 +151,16 @@ function closeMorePanel() {
   mask-image: linear-gradient(to top, black 0%, transparent 100%);
 }
 
-/* 主 Dock：毛玻璃 pill 形 */
+/* 主 Dock：毛玻璃 pill 形，扁长 */
 .floating-dock {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 1px;
+  gap: 2px;
   margin: 0 12px 14px 12px;
-  padding: 4px 8px;
+  padding: 5px 10px;
   max-width: calc(100vw - 24px);
-  border-radius: 24px;
+  border-radius: 20px;
   /* 鸿蒙式强毛玻璃：更通透 */
   background: color-mix(in srgb, var(--surface-1, #fff) 55%, transparent);
   backdrop-filter: blur(40px) saturate(200%) brightness(1.05);
@@ -180,19 +180,19 @@ function closeMorePanel() {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 单个导航项 */
+/* 单个导航项：横向排列（图标+标签水平） */
 .dock-item {
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  padding: 5px 14px;
-  min-width: 60px;
-  border-radius: 16px;
+  gap: 6px;
+  padding: 8px 16px;
+  min-width: 72px;
+  border-radius: 14px;
   color: var(--theme-text);
-  opacity: 0.65;
+  opacity: 0.6;
   text-decoration: none;
   background: transparent;
   border: none;
@@ -267,8 +267,8 @@ function closeMorePanel() {
 }
 
 .dock-item-label {
-  font-size: 9px;
-  line-height: 1.2;
+  font-size: 12px;
+  line-height: 1;
   font-weight: 500;
   white-space: nowrap;
   position: relative;
@@ -421,14 +421,20 @@ function closeMorePanel() {
 @media (max-width: 640px) {
   .floating-dock {
     gap: 0;
-    padding: 3px 6px;
+    padding: 4px 6px;
     margin: 0 8px 10px 8px;
     border-radius: 18px;
   }
 
   .dock-item {
-    min-width: 52px;
-    padding: 5px 10px;
+    min-width: 48px;
+    padding: 6px 10px;
+    gap: 0;
+  }
+
+  /* 移动端隐藏标签，只显图标，更扁更长 */
+  .dock-item-label {
+    display: none;
   }
 
   .dock-item-icon {
