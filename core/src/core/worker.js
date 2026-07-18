@@ -622,7 +622,8 @@ async function startBot(config) {
             const gold = Number(sellInfo && sellInfo.gold || sellInfo || 0);
             const count = Number(sellInfo && sellInfo.count || 0);
             if (!Number.isFinite(gold) || gold <= 0) return;
-            if (count > 0) recordOperation('sell', count);
+            // 出售按金币收益记录
+            recordOperation('sell', gold);
         };
         networkEvents.on('sell', onSellGain);
 
@@ -848,11 +849,12 @@ async function handleApiCall(msg) {
             case 'sellItems': {
                 const { sellItems } = require('../services/warehouse');
                 const items = Array.isArray(args[0]) ? args[0] : [];
-                const totalCount = items.reduce((sum, it) => sum + (Number(it.count) || 0), 0);
                 result = await sellItems(items.map(it => ({
                     id: it.id, count: it.count, uid: it.uid || 0
                 })));
-                if (totalCount > 0) recordOperation('sell', totalCount);
+                // 出售按金币收益记录
+                const sellGold = result && typeof result === 'object' ? Number(result.gold) || 0 : 0;
+                if (sellGold > 0) recordOperation('sell', sellGold);
                 break;
             }
             case 'setAutomation': {

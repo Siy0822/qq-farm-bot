@@ -204,7 +204,7 @@ const OP_META: Record<string, { label: string, icon: string, color: string }> = 
   helpWeed: { label: '帮除草', icon: 'i-carbon-cut', color: 'text-yellow-400' },
   helpBug: { label: '帮除虫', icon: 'i-carbon-pest', color: 'text-red-300' },
   taskClaim: { label: '任务', icon: 'i-carbon-task-complete', color: 'text-indigo-500' },
-  sell: { label: '出售', icon: 'i-carbon-shopping-cart', color: 'text-pink-500' },
+  sell: { label: '出售收益', icon: 'i-carbon-money', color: 'text-pink-500' },
   tongQiGift: { label: '同气礼包', icon: 'i-carbon-gift', color: 'text-rose-500' },
 }
 
@@ -327,6 +327,16 @@ function getOpIcon(key: string | number) {
 
 function getOpColor(key: string | number) {
   return OP_META[String(key)]?.color || 'text-gray-400'
+}
+
+function formatOpValue(key: string | number, val: number) {
+  // 出售按金币收益显示
+  if (key === 'sell') {
+    const n = Number(val) || 0
+    if (n >= 10000) return `${(n / 10000).toFixed(1)}万`
+    return n.toLocaleString()
+  }
+  return val
 }
 
 function getExpPercent(progress: any) {
@@ -775,7 +785,7 @@ useIntervalFn(updateCountdowns, 1000)
                 </div>
               </div>
               <div class="text-sm font-bold 2xl:text-base">
-                {{ val }}
+                {{ formatOpValue(key, val) }}
               </div>
             </div>
           </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { menuRoutes } from '@/router/menu'
 import { useUserStore } from '@/stores/user'
@@ -27,6 +27,10 @@ const activeInSecondary = computed(() => {
 
 const showMorePanel = ref(false)
 
+// 下滑隐藏、上滑/点击底部弹出
+const navHidden = ref(false)
+let lastScrollY = 0
+
 function isActive(path: string): boolean {
   if (path === '') return route.path === '/' || route.path === ''
   return route.path.startsWith(`/${path}`)
@@ -39,11 +43,43 @@ function goTo(path: string) {
 
 function toggleMorePanel() { showMorePanel.value = !showMorePanel.value }
 function closeMorePanel() { showMorePanel.value = false }
+
+function handleScroll() {
+  const cur = window.scrollY || document.documentElement.scrollTop
+  const delta = cur - lastScrollY
+  // 下滑超过阈值且滚出顶部区域 → 隐藏
+  if (cur > 80 && delta > 8) {
+    navHidden.value = true
+  } else if (delta < -8 || cur < 80) {
+    // 上滑或回到顶部 → 显示
+    navHidden.value = false
+  }
+  lastScrollY = cur
+}
+
+// 点击底部区域弹出导航栏
+function handleBottomClick(e: MouseEvent) {
+  if (!navHidden.value) return
+  const bottomZone = window.innerHeight - e.clientY
+  if (bottomZone < 80) {
+    navHidden.value = false
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('scroll', handleScroll, { passive: true })
+  window.addEventListener('click', handleBottomClick, { passive: true })
+})
+
+onUnmounted(() => {
+  window.removeEventListener('scroll', handleScroll)
+  window.removeEventListener('click', handleBottomClick)
+})
 </script>
 
 <template>
-  <div class="ambient-glow" />
-  <div class="floating-nav-wrapper">
+  <div class="ambient-glow" :class="{ 'ambient-glow--hidden': navHidden }" />
+  <div class="floating-nav-wrapper" :class="{ 'nav-hidden': navHidden }">
     <Transition name="more-panel">
       <div v-if="showMorePanel" class="more-panel">
         <div class="more-panel-header">
@@ -104,6 +140,13 @@ function closeMorePanel() { showMorePanel.value = false }
   justify-content: center;
   padding-bottom: env(safe-area-inset-bottom, 0px);
   pointer-events: none;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
+}
+
+/* 下滑隐藏 */
+.floating-nav-wrapper.nav-hidden {
+  transform: translateY(calc(100% + 40px));
+  opacity: 0;
 }
 
 .ambient-glow {
@@ -117,6 +160,10 @@ function closeMorePanel() { showMorePanel.value = false }
   pointer-events: none;
   z-index: 999;
   filter: blur(36px);
+  transition: opacity 0.35s ease;
+}
+.ambient-glow--hidden {
+  opacity: 0;
 }
 
 .floating-nav {

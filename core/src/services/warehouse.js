@@ -489,7 +489,7 @@ async function getBagDetail() {
  */
 async function sellAllFruits() {
   const sellEnabled = isAutomationOn('sell');
-  if (!sellEnabled) return;
+  if (!sellEnabled) return 0;
 
   try {
     const bag = await getBag();
@@ -506,7 +506,7 @@ async function sellAllFruits() {
 
     if (fruits.length === 0) {
       log('仓库', '无果实可出售');
-      return;
+      return 0;
     }
 
     const totalsBefore = getCurrentTotals();
@@ -608,7 +608,7 @@ async function sellAllFruits() {
         totalsDeltaGold: goldDelta,
         totalsDeltaExp: expDelta,
       });
-      return;
+      return 0;
     }
 
     log('仓库', `出售 ${soldLabels.join(', ')}${skippedKindCount > 0 ? `，跳过 ${skippedKindCount} 个不可售物品` : ''}${totalGoldGain > 0 ? `，获得 ${totalGoldGain} 金币` : ''}`, {
@@ -628,8 +628,10 @@ async function sellAllFruits() {
     if (totalGoldGain > 0) {
       networkEvents.emit('sell', { gold: totalGoldGain, count: soldTotalCount });
     }
+    return totalGoldGain || 0;
   } catch (err) {
     logWarn('仓库', `出售失败: ${err.message}`);
+    return 0;
   }
 }
 
