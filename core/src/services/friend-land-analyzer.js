@@ -336,6 +336,7 @@ async function getFriendsList(forceRefresh = false) {
 
 /**
  * Fetch dog info for all friends in the list.
+ * 优先用本地缓存（巡查时随 enterFriendFarm 收集的），只对缓存缺失的好友拉取。
  * Caches guard dog (护主犬, id=90021) info locally.
  */
 async function fetchFriendsDogInfo() {
@@ -350,48 +351,79 @@ async function fetchFriendsDogInfo() {
     return { ok: false, error: '好友列表为空，请先获取好友列表' };
   }
 
-  const dogTargets = friends.map(f => ({
-    gid: toNum(f.gid),
-    name: f.name || `GID:${toNum(f.gid)}`,
-  }));
+  // 优先用本地缓存（巡查时随 enterFriendFarm 收集的护主犬信息）
+  const existingCache = accountId ? readFriendDogInfoCache(accountId) : null;
+  const cachedGids = existingCache ? new Set(Object.keys(existingCache).map(Number)) : new Set();
 
-  const { map: dogMap, failCount, blacklistCount } = await batchGetFriendDogInfo(dogTargets);
+  // 只对缓存里没有的好友拉取狗信息
+  const uncachedTargets = friends
+    .filter(f => !cachedGids.has(toNum(f.gid)))
+    .map(f => ({
+      gid: toNum(f.gid),
+      name: f.name || `GID:${toNum(f.gid)}`,
+    }));
 
-  const guardDogFriends = {};
-  for (const friend of friends) {
-    const dogInfo = dogMap.get(friend.gid);
-    if (dogInfo) {
-      friend.dogId = dogInfo.dogId;
-      friend.dogName = dogInfo.dogName;
-      friend.blacklisted = dogInfo.blacklisted || false;
-      if (friend.dogId === 90021) {
-        guardDogFriends[friend.gid] = {
-          dogId: friend.dogId,
-          dogName: friend.dogName,
-        };
+  log('好友', `获取狗信息：共 ${friends.length} 个好友，缓存命中 ${friends.length - uncachedTargets.length} 个，需拉取 ${uncachedTargets.length} 个`, {
+    module: 'friend',
+    event: 'fetchFriendsDogInfo',
+    total: friends.length,
+    cached: friends.length - uncachedTargets.length,
+    uncached: uncachedTargets.length,
+  });
+
+  let failCount = 0;
+  let blacklistCount = 0;
+
+  if (uncachedTargets.length > 0) {
+    const result = await batchGetFriendDogInfo(uncachedTargets);
+    failCount = result.failCount;
+    blacklistCount = result.blacklistCount;
+    // 合并新拉取的狗信息到好友列表
+    for (const friend of friends) {
+      const dogInfo = result.map.get(toNum(friend.gid));
+      if (dogInfo) {
+        friend.dogId = dogInfo.dogId;
+        friend.dogName = dogInfo.dogName;
+        friend.blacklisted = dogInfo.blacklisted || false;
+      }
+    }
+  }
+
+  // 从缓存补全已有狗信息
+  if (existingCache) {
+    for (const friend of friends) {
+      const gid = toNum(friend.gid);
+      if (existingCache[gid] && !friend.dogId) {
+        friend.dogId = existingCache[gid].dogId;
+        friend.dogName = existingCache[gid].dogName;
       }
     }
   }
 
   friendsListCache = friends;
 
-  // Persist guard dog info to disk cache
-  if (accountId && Object.keys(guardDogFriends).length > 0) {
-    writeFriendDogInfoCache(accountId, guardDogFriends);
-    log('好友',
-      `已保存 ${Object.keys(guardDogFriends).length} 个护主犬好友信息到本地缓存`,
-      {
-        module: 'friend',
-        event: '保存护主犬好友缓存',
-        count: Object.keys(guardDogFriends).length,
+  // 持久化护主犬信息到磁盘缓存
+  if (accountId) {
+    const guardDogFriends = {};
+    // 合并已有缓存 + 新拉取的
+    const mergedCache = { ...(existingCache || {}) };
+    for (const friend of friends) {
+      if (friend.dogId === 90021) {
+        mergedCache[friend.gid] = {
+          dogId: friend.dogId,
+          dogName: friend.dogName,
+        };
       }
-    );
+    }
+    if (Object.keys(mergedCache).length > 0) {
+      writeFriendDogInfoCache(accountId, mergedCache);
+    }
   }
 
   const guardDogCount = friends.filter(f => f.dogId === 90021).length;
 
   log('好友',
-    `获取好友狗信息完成: 共 ${friends.length} 个好友，护主犬 ${guardDogCount} 个，无狗 ${failCount} 个，黑名单 ${blacklistCount} 个`,
+    `获取狗信息完成: 共 ${friends.length} 个好友，护主犬 ${guardDogCount} 个，无狗 ${failCount} 个，黑名单 ${blacklistCount} 个`,
     {
       module: 'friend',
       event: '获取好友狗信息',
