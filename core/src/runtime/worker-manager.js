@@ -162,7 +162,9 @@ function createWorkerManager(deps) {
                 });
                 return;
             }
-            const base = String(wxConfig.apiBase).replace(/\/+$/, '');
+            // 规范化 apiBase：去掉尾部斜杠和可能误带的路径后缀
+            const rawBase = String(wxConfig.apiBase).trim().replace(/\/+$/, '');
+            const base = rawBase.replace(/\/wxapp\/getCode$/i, '').replace(/\/wxapp$/i, '').replace(/\/accounts$/i, '');
             const appId = wxConfig.appId || 'wx5306c5978fdb76e4';
             const resp = await fetch(`${base}/wxapp/getCode`, {
                 method: 'POST',

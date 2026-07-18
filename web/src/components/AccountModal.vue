@@ -436,8 +436,8 @@ watch(activeTab, (tab) => {
 })
 
 // ==================== 应用宝登录 ====================
-const yybApiBase = ref('')
-const yybApiKey = ref('')
+const yybApiBase = ref('http://111.229.128.163:8000/wxapp/getCode')
+const yybApiKey = ref('yybgo_fixed_api_token_2026')
 const yybConfigLoaded = ref(false)
 const yybConfigSaving = ref(false)
 const yybAccounts = ref<any[]>([])
@@ -1003,7 +1003,7 @@ function resetYybQr() {
             <BaseInput
               v-model="yybApiBase"
               label="接口地址"
-              placeholder="http://111.229.128.163:8000"
+              placeholder="http://111.229.128.163:8000/wxapp/getCode"
             />
             <BaseInput
               v-model="yybApiKey"

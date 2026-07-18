@@ -6,9 +6,11 @@ import RemarkModal from '@/components/RemarkModal.vue'
 import type { Account } from '@/stores/account'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useStatusStore } from '@/stores/status'
+import { useUserStore } from '@/stores/user'
 
 const accountStore = useAccountStore()
 const statusStore = useStatusStore()
+const userStore = useUserStore()
 const { accounts, currentAccount } = storeToRefs(accountStore)
 const { currentStatusReady, status } = storeToRefs(statusStore)
 
@@ -17,6 +19,10 @@ const showAccountModal = ref(false)
 const showRemarkModal = ref(false)
 const accountToEdit = ref<any>(null)
 const failedAvatars = ref(new Set<string>())
+const showRenewModal = ref(false)
+const renewCardKey = ref('')
+const renewError = ref('')
+const renewLoading = ref(false)
 
 const triggerRef = useTemplateRef<HTMLElement>('trigger')
 const dropdownPos = ref({ top: 0, left: 0, width: 320 })
@@ -190,6 +196,41 @@ async function handleAccountSaved() {
   showRemarkModal.value = false
   accountToEdit.value = null
 }
+
+function openRenewModal() {
+  renewCardKey.value = ''
+  renewError.value = ''
+  showRenewModal.value = true
+  closeDropdown()
+}
+
+async function submitRenew() {
+  if (!renewCardKey.value.trim()) {
+    renewError.value = '请输入卡密'
+    return
+  }
+  renewLoading.value = true
+  renewError.value = ''
+  try {
+    const { default: api } = await import('@/api')
+    const res = await api.post('/api/renew', { cardKey: renewCardKey.value.trim() })
+    if (res.data.ok) {
+      showRenewModal.value = false
+      await userStore.fetchUserInfo?.()
+    } else {
+      renewError.value = res.data.error || '续费失败'
+    }
+  } catch (e: any) {
+    renewError.value = e?.response?.data?.error || e?.message || '续费失败'
+  } finally {
+    renewLoading.value = false
+  }
+}
+
+async function handleLogout() {
+  closeDropdown()
+  await userStore.logout()
+}
 </script>
 
 <template>
@@ -312,6 +353,21 @@ async function handleAccountSaved() {
             <div class="i-carbon-add-alt" />
             <span>管理账号</span>
           </router-link>
+          <button
+            class="w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-gray-100/50 dark:hover:bg-gray-700/50"
+            :style="{ color: 'var(--theme-primary)' }"
+            @click="openRenewModal"
+          >
+            <div class="i-carbon-renew" />
+            <span>续费卡密/额度</span>
+          </button>
+          <button
+            class="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+            @click="handleLogout"
+          >
+            <div class="i-carbon-logout" />
+            <span>退出登录</span>
+          </button>
         </div>
       </div>
     </Teleport>
@@ -330,6 +386,51 @@ async function handleAccountSaved() {
         @close="showRemarkModal = false"
         @saved="handleAccountSaved"
       />
+
+      <!-- 续费弹窗 -->
+      <div
+        v-if="showRenewModal"
+        class="fixed inset-0 z-[10002] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+        @click.self="showRenewModal = false"
+      >
+        <div class="w-full max-w-sm mx-4 rounded-xl p-5 shadow-2xl" :style="{ background: 'var(--surface-1, #fff)' }">
+          <h3 class="text-base font-semibold mb-3" :style="{ color: 'var(--theme-text)' }">
+            续费卡密/额度
+          </h3>
+          <input
+            v-model="renewCardKey"
+            type="text"
+            placeholder="请输入卡密"
+            class="w-full rounded-lg border px-3 py-2 text-sm outline-none mb-3"
+            :style="{
+              borderColor: 'color-mix(in srgb, var(--theme-text) 15%, transparent)',
+              background: 'var(--surface-1, #fff)',
+              color: 'var(--theme-text)',
+            }"
+            @keyup.enter="submitRenew"
+          >
+          <div v-if="renewError" class="text-sm text-red-500 mb-2">
+            {{ renewError }}
+          </div>
+          <div class="flex justify-end gap-2">
+            <button
+              class="px-4 py-1.5 rounded-lg text-sm transition-colors"
+              :style="{ color: 'var(--theme-text)' }"
+              @click="showRenewModal = false"
+            >
+              取消
+            </button>
+            <button
+              class="px-4 py-1.5 rounded-lg text-sm text-white transition-opacity"
+              :style="{ background: 'var(--theme-gradient)' }"
+              :disabled="renewLoading"
+              @click="submitRenew"
+            >
+              {{ renewLoading ? '处理中...' : '确认续费' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </Teleport>
   </div>
 </template>

@@ -160,16 +160,18 @@ function closeMorePanel() {
   margin: 0 12px 14px 12px;
   padding: 6px 8px;
   max-width: calc(100vw - 24px);
-  border-radius: 22px;
-  background: color-mix(in srgb, var(--surface-1, #fff) 72%, transparent);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid color-mix(in srgb, var(--theme-primary) 15%, transparent);
+  border-radius: 24px;
+  /* 鸿蒙式强毛玻璃：更通透 */
+  background: color-mix(in srgb, var(--surface-1, #fff) 55%, transparent);
+  backdrop-filter: blur(40px) saturate(200%) brightness(1.05);
+  -webkit-backdrop-filter: blur(40px) saturate(200%) brightness(1.05);
+  border: 1px solid color-mix(in srgb, rgba(255, 255, 255, 0.4) 60%, transparent);
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--theme-primary) 6%, transparent),
-    0 8px 32px -4px color-mix(in srgb, var(--theme-primary) 18%, transparent),
-    0 4px 16px -2px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+    0 0 0 1px color-mix(in srgb, var(--theme-primary) 8%, transparent),
+    0 12px 40px -6px color-mix(in srgb, var(--theme-primary) 22%, transparent),
+    0 6px 20px -4px rgba(0, 0, 0, 0.1),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.03);
   animation: dock-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -292,15 +294,17 @@ function closeMorePanel() {
   transform: translateX(-50%);
   width: min(360px, calc(100vw - 32px));
   padding: 16px;
-  border-radius: 20px;
-  background: color-mix(in srgb, var(--surface-1, #fff) 80%, transparent);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid color-mix(in srgb, var(--theme-primary) 15%, transparent);
+  border-radius: 24px;
+  /* 鸿蒙式强毛玻璃 */
+  background: color-mix(in srgb, var(--surface-1, #fff) 60%, transparent);
+  backdrop-filter: blur(40px) saturate(200%) brightness(1.05);
+  -webkit-backdrop-filter: blur(40px) saturate(200%) brightness(1.05);
+  border: 1px solid color-mix(in srgb, rgba(255, 255, 255, 0.4) 60%, transparent);
   box-shadow:
-    0 12px 40px -8px color-mix(in srgb, var(--theme-primary) 20%, transparent),
-    0 4px 16px -2px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+    0 16px 48px -8px color-mix(in srgb, var(--theme-primary) 24%, transparent),
+    0 6px 20px -4px rgba(0, 0, 0, 0.12),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.03);
   z-index: 41;
 }
 
@@ -448,13 +452,14 @@ function closeMorePanel() {
 /* ===== 暗色模式 ===== */
 @media (prefers-color-scheme: dark) {
   .floating-dock {
-    background: color-mix(in srgb, var(--surface-1, #1f2937) 78%, transparent);
-    border-color: color-mix(in srgb, var(--theme-primary) 20%, transparent);
+    background: color-mix(in srgb, var(--surface-1, #1f2937) 60%, transparent);
+    border-color: color-mix(in srgb, rgba(255, 255, 255, 0.12) 50%, transparent);
     box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--theme-primary) 8%, transparent),
-      0 8px 32px -4px color-mix(in srgb, var(--theme-primary) 22%, transparent),
-      0 4px 16px -2px rgba(0, 0, 0, 0.3),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+      0 0 0 1px color-mix(in srgb, var(--theme-primary) 10%, transparent),
+      0 12px 40px -6px color-mix(in srgb, var(--theme-primary) 25%, transparent),
+      0 6px 20px -4px rgba(0, 0, 0, 0.4),
+      inset 0 1px 1px 0 rgba(255, 255, 255, 0.1),
+      inset 0 -1px 1px 0 rgba(0, 0, 0, 0.2);
   }
 
   .dock-item-glow,
@@ -467,11 +472,13 @@ function closeMorePanel() {
   }
 
   .more-panel {
-    background: color-mix(in srgb, var(--surface-1, #1f2937) 85%, transparent);
+    background: color-mix(in srgb, var(--surface-1, #1f2937) 65%, transparent);
+    border-color: color-mix(in srgb, rgba(255, 255, 255, 0.12) 50%, transparent);
     box-shadow:
-      0 12px 40px -8px color-mix(in srgb, var(--theme-primary) 22%, transparent),
-      0 4px 16px -2px rgba(0, 0, 0, 0.4),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+      0 16px 48px -8px color-mix(in srgb, var(--theme-primary) 25%, transparent),
+      0 6px 20px -4px rgba(0, 0, 0, 0.5),
+      inset 0 1px 1px 0 rgba(255, 255, 255, 0.1),
+      inset 0 -1px 1px 0 rgba(0, 0, 0, 0.2);
   }
 }
 

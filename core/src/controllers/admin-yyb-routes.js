@@ -11,8 +11,18 @@
 
 const DEFAULT_APP_ID = "wx5306c5978fdb76e4";
 
-function trimTrailingSlash(value) {
-  return String(value || "").replace(/\/+$/, "");
+/**
+ * 规范化 apiBase：去掉尾部斜杠，以及用户可能误带的 /wxapp/getCode 等路径后缀。
+ * 用户在前端可能填 "http://x.x.x.x:8000/wxapp/getCode"（完整接口地址），
+ * 这里统一还原为基准地址 "http://x.x.x.x:8000"，再拼接具体 path。
+ */
+function normalizeApiBase(value) {
+  let base = String(value || "").trim().replace(/\/+$/, "");
+  // 去掉用户可能误带的已知路径后缀
+  base = base.replace(/\/wxapp\/getCode$/i, "");
+  base = base.replace(/\/wxapp$/i, "");
+  base = base.replace(/\/accounts$/i, "");
+  return base;
 }
 
 /**
@@ -20,7 +30,7 @@ function trimTrailingSlash(value) {
  * @returns {Promise<{ok:boolean, data?:any, error?:string, yybCode?:number}>}
  */
 async function callYybApi(apiBase, path, apiKey, init = {}) {
-  const base = trimTrailingSlash(apiBase);
+  const base = normalizeApiBase(apiBase);
   if (!base) return { ok: false, error: "应用宝接口地址未配置" };
   if (!apiKey) return { ok: false, error: "应用宝 API Token 未配置" };
 
