@@ -446,6 +446,10 @@ const yybSelectedOpenid = ref('')
 const yybAccountName = ref('')
 const yybLoginLoading = ref(false)
 const yybError = ref('')
+// 离线重连配置
+const yybAutoReconnect = ref(false)
+const yybReconnectDelayMin = ref(5)
+const yybReconnectMaxAttempts = ref(3)
 
 const yybConfigured = computed(() => !!yybApiBase.value && !!yybApiKey.value)
 
@@ -456,6 +460,9 @@ async function loadYybConfig() {
     if (data?.ok && data.config) {
       yybApiBase.value = data.config.apiBase || ''
       yybApiKey.value = data.config.apiKey || ''
+      yybAutoReconnect.value = data.config.autoReconnect === true
+      yybReconnectDelayMin.value = data.config.reconnectDelayMin || 5
+      yybReconnectMaxAttempts.value = data.config.reconnectMaxAttempts || 3
     }
   } catch (e: any) {
     console.error('加载应用宝配置失败', e)
@@ -480,6 +487,9 @@ async function saveYybConfig() {
       apiKey: yybApiKey.value.trim(),
       appId: 'wx5306c5978fdb76e4',
       enabled: true,
+      autoReconnect: yybAutoReconnect.value,
+      reconnectDelayMin: Number(yybReconnectDelayMin.value) || 5,
+      reconnectMaxAttempts: Number(yybReconnectMaxAttempts.value) || 3,
       confirmed: true,
     }
     await api.post('/api/admin/wx-config', merged)
@@ -1031,6 +1041,62 @@ function resetYybQr() {
                 <BaseButton variant="ghost" size="sm" :loading="yybAccountsLoading" @click="fetchYybAccounts">
                   刷新列表
                 </BaseButton>
+              </div>
+            </div>
+
+            <!-- 离线重连配置 -->
+            <div class="rounded-lg border p-3 space-y-2" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 15%, transparent)' }">
+              <div class="flex items-center justify-between">
+                <span class="text-sm font-medium" :style="{ color: 'var(--theme-text)' }">
+                  离线自动重连
+                </span>
+                <label class="flex cursor-pointer items-center gap-2">
+                  <input
+                    v-model="yybAutoReconnect"
+                    type="checkbox"
+                    class="h-4 w-4"
+                    :style="{ accentColor: 'var(--theme-primary)' }"
+                    @change="saveYybConfig"
+                  >
+                  <span class="text-xs" :style="{ color: 'var(--theme-text)' }">启用</span>
+                </label>
+              </div>
+              <div v-if="yybAutoReconnect" class="flex gap-3 items-end">
+                <div class="flex-1">
+                  <label class="text-xs opacity-70 mb-1 block" :style="{ color: 'var(--theme-text)' }">离线几分钟后重连</label>
+                  <input
+                    v-model.number="yybReconnectDelayMin"
+                    type="number"
+                    min="1"
+                    max="60"
+                    class="w-full rounded-lg border px-2 py-1 text-sm"
+                    :style="{
+                      borderColor: 'color-mix(in srgb, var(--theme-text) 15%, transparent)',
+                      background: 'var(--surface-1, #fff)',
+                      color: 'var(--theme-text)',
+                    }"
+                    @change="saveYybConfig"
+                  >
+                </div>
+                <div class="flex-1">
+                  <label class="text-xs opacity-70 mb-1 block" :style="{ color: 'var(--theme-text)' }">最大重试次数</label>
+                  <input
+                    v-model.number="yybReconnectMaxAttempts"
+                    type="number"
+                    min="1"
+                    max="10"
+                    class="w-full rounded-lg border px-2 py-1 text-sm"
+                    :style="{
+                      borderColor: 'color-mix(in srgb, var(--theme-text) 15%, transparent)',
+                      background: 'var(--surface-1, #fff)',
+                      color: 'var(--theme-text)',
+                    }"
+                    @change="saveYybConfig"
+                  >
+                </div>
+              </div>
+              <div v-if="yybAutoReconnect" class="text-xs opacity-50" :style="{ color: 'var(--theme-text)' }">
+                账号离线后，等待 {{ yybReconnectDelayMin }} 分钟自动重新获取 code 并重连，失败 {{ yybReconnectMaxAttempts }} 次后停止
               </div>
             </div>
 

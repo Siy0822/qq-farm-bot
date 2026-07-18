@@ -245,6 +245,12 @@ function createWorkerManager(deps) {
             wsError: null
         };
 
+        // Worker 成功启动，清理自动重连计数
+        if (scheduler._reconnectAttempts && scheduler._reconnectAttempts[account.id]) {
+            delete scheduler._reconnectAttempts[account.id];
+            log('系统', `账号 ${account.name} 重连成功，��置重连计数`);
+        }
+
         // 发送启动配置
         proc.send({
             type: 'start',
@@ -526,7 +532,7 @@ function createWorkerManager(deps) {
             stopWorker(accountId);
         } else if (msg.type === 'ws_reconnect_failed') {
             const reason = msg.reason || '未知';
-            log('系统', `账号 ${  wrk.name  } 连接多次重试失败，已自动停止账号`, {
+            log('系统', `账号 ${  wrk.name  } 连接多次重试失败`, {
                 accountId: String(accountId),
                 accountName: wrk.name
             });
@@ -538,10 +544,74 @@ function createWorkerManager(deps) {
                 offlineMs: 0
             });
             addAccountLog('ws_reconnect_failed',
-                `账号 ${  wrk.name  } 连接多次重试失败，已自动停止`,
+                `账号 ${  wrk.name  } 连接多次重试失败`,
                 accountId, wrk.name, { reason });
 
+            // 先停止当前 worker（清理进程）
             stopWorker(accountId);
+
+            // 检查是否启用自动重连
+            try {
+                const store = require('../models/store');
+                const wxConfig = store.getGlobalWxConfig ? store.getGlobalWxConfig() : null;
+                if (wxConfig && wxConfig.autoReconnect && wxConfig.reconnectDelayMin > 0) {
+                    // 获取当前重连次数（从 workers 的临时字段读）
+                    const attemptKey = `reconnect_attempt_${accountId}`;
+                    const currentAttempt = scheduler._reconnectAttempts && scheduler._reconnectAttempts[accountId] || 0;
+                    const maxAttempts = wxConfig.reconnectMaxAttempts || 3;
+
+                    if (currentAttempt >= maxAttempts) {
+                        log('系统', `账号 ${wrk.name} 自动重连已达上限(${maxAttempts}次)，停止重连`, {
+                            accountId: String(accountId),
+                            attempts: currentAttempt,
+                        });
+                        // 清理重连计数
+                        if (!scheduler._reconnectAttempts) scheduler._reconnectAttempts = {};
+                        delete scheduler._reconnectAttempts[accountId];
+                        return;
+                    }
+
+                    // 记录重连计数
+                    if (!scheduler._reconnectAttempts) scheduler._reconnectAttempts = {};
+                    scheduler._reconnectAttempts[accountId] = currentAttempt + 1;
+                    const nextAttempt = currentAttempt + 1;
+
+                    const delayMs = wxConfig.reconnectDelayMin * 60 * 1000;
+                    log('系统', `账号 ${wrk.name} 将在 ${wxConfig.reconnectDelayMin} 分钟后自动重连 (${nextAttempt}/${maxAttempts})`, {
+                        accountId: String(accountId),
+                        delayMin: wxConfig.reconnectDelayMin,
+                        attempt: nextAttempt,
+                        maxAttempts,
+                    });
+
+                    scheduler.setTimeoutTask(attemptKey, delayMs, async () => {
+                        // 重连前检查账号是否还存在、是否已被手动停止
+                        const currentWrk = workers[accountId];
+                        if (currentWrk) {
+                            // 已经有 worker 在跑，不需要重连
+                            return;
+                        }
+                        try {
+                            const accountsData = store.getAccounts();
+                            const account = (accountsData.accounts || []).find(a => a.id === accountId);
+                            if (!account) {
+                                log('系统', `账号 ${wrk.name} 已被删除，取消自动重连`);
+                                if (scheduler._reconnectAttempts) delete scheduler._reconnectAttempts[accountId];
+                                return;
+                            }
+                            log('系统', `账号 ${wrk.name} 开始自动重连 (${nextAttempt}/${maxAttempts})`);
+                            await startWorker(account);
+                        } catch (e) {
+                            log('系统', `账号 ${wrk.name} 自动重连启动失败: ${e.message}`);
+                        }
+                    });
+                } else {
+                    // 未启用自动重连，保持停止状态
+                    log('系统', `账号 ${wrk.name} 未启用自动重连，已停止`);
+                }
+            } catch (e) {
+                log('系统', `账号 ${wrk.name} 自动重连逻辑异常: ${e.message}`);
+            }
         } else if (msg.type === 'automation_patch') {
             const patch = msg.patch && typeof msg.patch === 'object' ? msg.patch : {};
             if ((patch.automation && typeof patch.automation === 'object')

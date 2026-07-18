@@ -857,7 +857,10 @@ function loadGlobalConfig() {
                 proxyApiUrl: String(data.globalWxConfig.proxyApiUrl || 'https://code.z74d.top/api').trim(),
                 appId: String(data.globalWxConfig.appId || 'wx5306c5978fdb76e4').trim(),
                 autoAddAccount: data.globalWxConfig.autoAddAccount !== false,
-                userIsolation: data.globalWxConfig.userIsolation !== false
+                userIsolation: data.globalWxConfig.userIsolation !== false,
+                autoReconnect: data.globalWxConfig.autoReconnect === true,
+                reconnectDelayMin: Math.max(1, Number(data.globalWxConfig.reconnectDelayMin) || 5),
+                reconnectMaxAttempts: Math.max(1, Number(data.globalWxConfig.reconnectMaxAttempts) || 3)
             };
         }
 
@@ -1645,7 +1648,10 @@ const DEFAULT_WX_CONFIG = {
     proxyApiUrl: 'https://code.z74d.top/api',
     appId: 'wx5306c5978fdb76e4',
     autoAddAccount: true,
-    userIsolation: true
+    userIsolation: true,
+    autoReconnect: false,
+    reconnectDelayMin: 5,
+    reconnectMaxAttempts: 3
 };
 
 function getGlobalWxConfig() {
@@ -1663,7 +1669,10 @@ function setGlobalWxConfig(config) {
         proxyApiUrl: String(config.proxyApiUrl || DEFAULT_WX_CONFIG.proxyApiUrl).trim(),
         appId: String(config.appId || DEFAULT_WX_CONFIG.appId).trim(),
         autoAddAccount: config.autoAddAccount !== false,
-        userIsolation: config.userIsolation !== false
+        userIsolation: config.userIsolation !== false,
+        autoReconnect: config.autoReconnect === true,
+        reconnectDelayMin: Math.max(1, Number(config.reconnectDelayMin) || DEFAULT_WX_CONFIG.reconnectDelayMin),
+        reconnectMaxAttempts: Math.max(1, Number(config.reconnectMaxAttempts) || DEFAULT_WX_CONFIG.reconnectMaxAttempts)
     };
     saveGlobalConfig();
     return { ...globalConfig.globalWxConfig };
