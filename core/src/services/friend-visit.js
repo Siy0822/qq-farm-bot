@@ -54,8 +54,11 @@ async function runBatchWithFallback(landIds, batchFn, singleFn) {
       ok++;
     } catch (singleErr) {
       const msg = singleErr && singleErr.message ? singleErr.message : String(singleErr);
-      // 次数用完类错误静默跳过，其他记录方便排查
-      if (!msg.includes('1001046') && !msg.includes('used up')) {
+      // 次数用完类错误、以及「作物当前无需该操作」类错误均静默跳过
+      // （服务端在并发帮助/状态滞后时会返回这些，属正常业务结果，无需告警刷屏）
+      const silenced = ['1001046', 'used up', '1001014', '1001015', '1001018',
+        '尚未干旱', '不需要除草', '不需要除虫'];
+      if (!silenced.some(s => msg.includes(s))) {
         logWarn('好友', `操作失败: ${msg}`, {
           module: 'friend',
           event: 'operation_single_fail',
