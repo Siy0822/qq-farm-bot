@@ -325,7 +325,8 @@ async function checkFriends(options = {}) {
     // （例如新号/跨日重置后尚未帮助过，或服务端未回传这些 id），则无法判断，
     // 必须保持 canGetHelpExp=false，继续只帮护主犬，绝不能无差别帮所有人。
     if (expLimitEnabled && !getCanGetHelpExp() && getHelpAutoDisabledByLimit()) {
-      const allExpIds = [0x2715, 0x2713, 0x2716, 0x2712, 0x2717, 0x2711];
+      // 仅用真正的"帮忙"经验 id：浇水10001 / 除虫10002 / 除草10003
+      const allExpIds = [0x2711, 0x2712, 0x2713];
       const hasKnownLimit = hasKnownHelpExpLimits(allExpIds);
       const anyExpLeft = canGetExpByCandidates(allExpIds);
       if (hasKnownLimit && anyExpLeft) {

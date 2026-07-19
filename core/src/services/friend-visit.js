@@ -361,15 +361,22 @@ async function visitFriend(friend, tally, myGid, accountId) {
   const helpEnabled = !!isAutomationOn('friend_help');
   const expLimitEnabled = !!isAutomationOn('friend_help_exp_limit');
 
+  // 护主犬(90021)判定：与巡查主流程一致，优先用传入字段，否则查本地狗信息缓存
+  const friendGidNum = toNum(gid);
+  const dogCache = readFriendDogInfoCache(accountId);
+  const hasGuardDog = !!friend.hasGuardDog ||
+    toNum(friend.dogId) === 90021 ||
+    !!(dogCache && dogCache[friendGidNum] && toNum(dogCache[friendGidNum].dogId) === 90021);
+
   if (!expLimitEnabled) setCanGetHelpExp(true);
 
   if (helpEnabled) {
-    // Skip help if exp limit is reached and we haven't been overridden
-    if (!expLimitEnabled || getCanGetHelpExp()) {
+    // 经验满时仍帮助护主犬好友，仅跳过普通好友（与 visitFriendForHelp 行为一致）
+    if (!expLimitEnabled || getCanGetHelpExp() || hasGuardDog) {
       const helpOptions = [
         {
-          id: 0x2715,             // 10005 = weed
-          expIds: [0x2715, 0x2713], // [10005, 10003]
+          id: 0x2715,             // 10005 = 放虫（占位，未直接使用）
+          expIds: [0x2713],       // [10003 = 帮好友除草]
           list: analysis.needWeed,
           fn: helpWeed,
           key: 'weed',
@@ -377,8 +384,8 @@ async function visitFriend(friend, tally, myGid, accountId) {
           record: 'helpWeed',
         },
         {
-          id: 0x2716,             // 10006 = bug
-          expIds: [0x2716, 0x2712], // [10006, 10002]
+          id: 0x2716,             // 10006 = 放草（占位，未直接使用）
+          expIds: [0x2712],       // [10002 = 帮好友除虫]
           list: analysis.needBug,
           fn: helpInsecticide,
           key: 'bug',
@@ -386,8 +393,8 @@ async function visitFriend(friend, tally, myGid, accountId) {
           record: 'helpBug',
         },
         {
-          id: 0x2717,             // 10007 = water
-          expIds: [0x2717, 0x2711], // [10007, 10001]
+          id: 0x2717,             // 10007 = 帮好友复活（占位，未直接使用）
+          expIds: [0x2711],       // [10001 = 帮好友浇水]
           list: analysis.needWater,
           fn: helpWater,
           key: 'water',
@@ -397,7 +404,9 @@ async function visitFriend(friend, tally, myGid, accountId) {
       ];
 
       for (const opt of helpOptions) {
+        const useExpCheck = hasGuardDog ? false : expLimitEnabled;
         const canGetExp = !expLimitEnabled ||
+          hasGuardDog ||
           (canGetExpByCandidates(opt.expIds) && getCanGetHelpExp());
 
         if (opt.list.length > 0 && canGetExp) {
@@ -405,8 +414,8 @@ async function visitFriend(friend, tally, myGid, accountId) {
           try {
             const okCount = await runBatchWithFallback(
               opt.list,
-              ids => opt.fn(gid, ids, expLimitEnabled),
-              id => opt.fn(gid, id, expLimitEnabled)
+              ids => opt.fn(gid, ids, useExpCheck),
+              id => opt.fn(gid, id, useExpCheck)
             );
             if (okCount > 0) {
               actionLogs.push(`${opt.name}${okCount}`);
@@ -701,8 +710,8 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
 
   const helpOptions = [
     {
-      id: 0x2715,             // 10005 = weed
-      expIds: [0x2715, 0x2713], // [10005, 10003]
+      id: 0x2715,             // 10005 = 放虫（占位，未直接使用）
+      expIds: [0x2713],       // [10003 = 帮好友除草]
       list: analysis.needWeed,
       fn: helpWeed,
       key: 'weed',
@@ -710,8 +719,8 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
       record: 'helpWeed',
     },
     {
-      id: 0x2716,             // 10006 = bug
-      expIds: [0x2716, 0x2712], // [10006, 10002]
+      id: 0x2716,             // 10006 = 放草（占位，未直接使用）
+      expIds: [0x2712],       // [10002 = 帮好友除虫]
       list: analysis.needBug,
       fn: helpInsecticide,
       key: 'bug',
@@ -719,8 +728,8 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
       record: 'helpBug',
     },
     {
-      id: 0x2717,             // 10007 = water
-      expIds: [0x2717, 0x2711], // [10007, 10001]
+      id: 0x2717,             // 10007 = 帮好友复活（占位，未直接使用）
+      expIds: [0x2711],       // [10001 = 帮好友浇水]
       list: analysis.needWater,
       fn: helpWater,
       key: 'water',

@@ -258,7 +258,11 @@ async function helpWater(gid, landIds, checkExpLimit = false) {
     // 修复：不再用 expAfter <= expBefore 猜测经验是否满（网络延迟/操作无收益都会误判），
     // 改为直接检查服务端 operation_limits 里所有帮忙操作的经验次数是否都达上限。
     // helpWater=10007, helpWeed=10005, helpBug=10006 及其配对 id
-    const allHelpExpIds = [0x2715, 0x2713, 0x2716, 0x2712, 0x2717, 0x2711];
+    // 仅用真正的"帮忙"经验 id：浇水10001 / 除虫10002 / 除草10003。
+    // 不要包含放虫10005、放草10006、复活10007——它们是另一类操作，
+    // 只帮忙场景下其经验额度不会被打满，会导致 anyExpLeft 永远为 true、
+    // autoDisableHelpByExpLimit 永不被触发，"经验满仅帮助护主犬"形同虚设。
+    const allHelpExpIds = [0x2711, 0x2712, 0x2713];
     const anyExpLeft = allHelpExpIds.some(id => canGetExp(id));
     if (!anyExpLeft) {
       autoDisableHelpByExpLimit();
@@ -291,7 +295,11 @@ async function helpWeed(gid, landIds, checkExpLimit = false) {
     // 修复：不再用 expAfter <= expBefore 猜测经验是否满（网络延迟/操作无收益都会误判），
     // 改为直接检查服务端 operation_limits 里所有帮忙操作的经验次数是否都达上限。
     // helpWater=10007, helpWeed=10005, helpBug=10006 及其配对 id
-    const allHelpExpIds = [0x2715, 0x2713, 0x2716, 0x2712, 0x2717, 0x2711];
+    // 仅用真正的"帮忙"经验 id：浇水10001 / 除虫10002 / 除草10003。
+    // 不要包含放虫10005、放草10006、复活10007——它们是另一类操作，
+    // 只帮忙场景下其经验额度不会被打满，会导致 anyExpLeft 永远为 true、
+    // autoDisableHelpByExpLimit 永不被触发，"经验满仅帮助护主犬"形同虚设。
+    const allHelpExpIds = [0x2711, 0x2712, 0x2713];
     const anyExpLeft = allHelpExpIds.some(id => canGetExp(id));
     if (!anyExpLeft) {
       autoDisableHelpByExpLimit();
@@ -324,7 +332,11 @@ async function helpInsecticide(gid, landIds, checkExpLimit = false) {
     // 修复：不再用 expAfter <= expBefore 猜测经验是否满（网络延迟/操作无收益都会误判），
     // 改为直接检查服务端 operation_limits 里所有帮忙操作的经验次数是否都达上限。
     // helpWater=10007, helpWeed=10005, helpBug=10006 及其配对 id
-    const allHelpExpIds = [0x2715, 0x2713, 0x2716, 0x2712, 0x2717, 0x2711];
+    // 仅用真正的"帮忙"经验 id：浇水10001 / 除虫10002 / 除草10003。
+    // 不要包含放虫10005、放草10006、复活10007——它们是另一类操作，
+    // 只帮忙场景下其经验额度不会被打满，会导致 anyExpLeft 永远为 true、
+    // autoDisableHelpByExpLimit 永不被触发，"经验满仅帮助护主犬"形同虚设。
+    const allHelpExpIds = [0x2711, 0x2712, 0x2713];
     const anyExpLeft = allHelpExpIds.some(id => canGetExp(id));
     if (!anyExpLeft) {
       autoDisableHelpByExpLimit();
