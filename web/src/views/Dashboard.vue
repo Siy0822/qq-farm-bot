@@ -46,10 +46,22 @@ const currentAccountDisconnected = computed(() =>
   currentStatusReady.value && !status.value?.connection?.connected,
 )
 
+// 解析日志时间戳：后端 accountLog 的 time 为 "YYYY-MM-DD HH:mm:ss" 非 ISO 格式，
+// Date.parse 在部分引擎会返回 NaN，必须加容错兜底，否则排序崩溃导致旧日志乱序常驻。
+function parseLogTs(time: any): number {
+  const t = Number(time)
+  if (!Number.isNaN(t) && t > 0)
+    return t
+  const parsed = Date.parse(String(time || ''))
+  if (!Number.isNaN(parsed))
+    return parsed
+  return Date.now()
+}
+
 const allLogs = computed(() => {
   const sLogs = statusLogs.value || []
   const aLogs = (statusAccountLogs.value || []).map((log: any) => ({
-    ts: new Date(log.time).getTime(),
+    ts: parseLogTs(log.time || log.ts),
     time: log.time,
     tag: log.action === 'Error' ? '错误' : '系统',
     msg: log.reason ? `${log.msg} (${log.reason})` : log.msg,
@@ -57,7 +69,7 @@ const allLogs = computed(() => {
   }))
 
   return [...sLogs, ...aLogs]
-    .sort((a: any, b: any) => a.ts - b.ts)
+    .sort((a: any, b: any) => (a.ts || 0) - (b.ts || 0))
 })
 
 const modules = [
