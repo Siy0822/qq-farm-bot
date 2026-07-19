@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { menuRoutes } from '@/router/menu'
 import { useUserStore } from '@/stores/user'
@@ -27,6 +27,9 @@ const activeInSecondary = computed(() => {
 
 const showMorePanel = ref(false)
 
+// 用户手动收起/展开：收起后 dock 整体让出底部，避免遮挡页面二级菜单/底部按钮
+const collapsed = ref(false)
+
 // 下滑隐藏、上滑/点击底部弹出
 const navHidden = ref(false)
 let lastScrollY = 0
@@ -43,6 +46,14 @@ function goTo(path: string) {
 
 function toggleMorePanel() { showMorePanel.value = !showMorePanel.value }
 function closeMorePanel() { showMorePanel.value = false }
+
+// 用户收起/展开 dock（点击把手或收起态小药丸）
+function toggleCollapse() { collapsed.value = !collapsed.value }
+
+// 打开"更多"二级面板时，dock 本体自动收起，避免两层浮层叠加遮挡按钮
+watch(showMorePanel, (open) => {
+  if (open) collapsed.value = true
+})
 
 function handleScroll() {
   const cur = window.scrollY || document.documentElement.scrollTop
@@ -78,8 +89,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="ambient-glow" :class="{ 'ambient-glow--hidden': navHidden }" />
-  <div class="floating-nav-wrapper" :class="{ 'nav-hidden': navHidden }">
+  <div class="ambient-glow" :class="{ 'ambient-glow--hidden': navHidden || collapsed }" />
+  <div
+    class="floating-nav-wrapper"
+    :class="{ 'nav-hidden': navHidden, 'dock-collapsed': collapsed }"
+  >
     <Transition name="more-panel">
       <div v-if="showMorePanel" class="more-panel">
         <div class="more-panel-header">
@@ -105,27 +119,46 @@ onUnmounted(() => {
     <Transition name="more-overlay">
       <div v-if="showMorePanel" class="more-overlay" @click="closeMorePanel" />
     </Transition>
-    <nav class="floating-nav" role="navigation" aria-label="主导航">
-      <router-link
-        v-for="item in primaryItems"
-        :key="item.path"
-        :to="item.path === '' ? '/' : `/${item.path}`"
-        class="nav-item"
-        :class="{ 'nav-item--active': isActive(item.path) }"
-        @click="closeMorePanel"
-      >
-        <span class="nav-item-icon" :class="item.icon" />
-        <span class="nav-item-label">{{ item.label }}</span>
-      </router-link>
-      <button
-        class="nav-item"
-        :class="{ 'nav-item--active': showMorePanel || activeInSecondary }"
-        @click="toggleMorePanel"
-      >
-        <span class="nav-item-icon i-carbon-overflow-menu-horizontal" />
-        <span class="nav-item-label">更多</span>
-      </button>
-    </nav>
+    <Transition name="dock-collapse">
+      <nav v-if="!collapsed" class="floating-nav" role="navigation" aria-label="主导航">
+        <router-link
+          v-for="item in primaryItems"
+          :key="item.path"
+          :to="item.path === '' ? '/' : `/${item.path}`"
+          class="nav-item"
+          :class="{ 'nav-item--active': isActive(item.path) }"
+          @click="closeMorePanel"
+        >
+          <span class="nav-item-icon" :class="item.icon" />
+          <span class="nav-item-label">{{ item.label }}</span>
+        </router-link>
+        <button
+          class="nav-item"
+          :class="{ 'nav-item--active': showMorePanel || activeInSecondary }"
+          @click="toggleMorePanel"
+        >
+          <span class="nav-item-icon i-carbon-overflow-menu-horizontal" />
+          <span class="nav-item-label">更多</span>
+        </button>
+      </nav>
+    </Transition>
+    <!-- 收起态：仅保留一个可点击的小药丸，不遮挡页面；展开态在 nav 上沿显示把手 -->
+    <button
+      v-if="collapsed"
+      class="dock-collapsed-pill"
+      aria-label="展开导航栏"
+      @click="toggleCollapse"
+    >
+      <span class="i-carbon-chevron-up" />
+    </button>
+    <button
+      v-else-if="!navHidden"
+      class="dock-handle"
+      aria-label="收起导航栏"
+      @click="toggleCollapse"
+    >
+      <span class="dock-handle-bar" />
+    </button>
   </div>
 </template>
 
@@ -147,6 +180,78 @@ onUnmounted(() => {
 .floating-nav-wrapper.nav-hidden {
   transform: translateY(calc(100% + 40px));
   opacity: 0;
+}
+
+/* 用户收起：整体下移并禁用交互，完全让出底部给页面内容 */
+.floating-nav-wrapper.dock-collapsed {
+  transform: translateY(calc(100% + 60px));
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 收起态小药丸：仅这一小块可点，其余区域不拦截点击 */
+.dock-collapsed-pill {
+  pointer-events: auto;
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 44px;
+  height: 22px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(30, 30, 40, 0.65);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  color: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s ease;
+  z-index: 1000;
+}
+.dock-collapsed-pill:hover { color: #fff; background: rgba(30, 30, 40, 0.8); }
+.dock-collapsed-pill .i-carbon-chevron-up { font-size: 14px; }
+
+/* 展开态把手：固定在底部 nav 上方的小横条，点击收起 */
+.dock-handle {
+  pointer-events: auto;
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 48px;
+  height: 18px;
+  border-radius: 12px 12px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: none;
+  background: rgba(30, 30, 40, 0.5);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  transition: all 0.2s ease;
+}
+.dock-handle:hover { background: rgba(30, 30, 40, 0.7); }
+.dock-handle-bar {
+  width: 22px;
+  height: 3px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.35);
+  transition: all 0.2s ease;
+}
+.dock-handle:hover .dock-handle-bar { background: rgba(255, 255, 255, 0.6); }
+
+.dock-collapse-enter-active, .dock-collapse-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dock-collapse-enter-from, .dock-collapse-leave-to {
+  opacity: 0;
+  transform: translateY(20px) scale(0.95);
 }
 
 .ambient-glow {
