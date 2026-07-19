@@ -593,7 +593,9 @@ async function sendLogin(onLoginSuccess) {
 let lastHeartbeatResponse = Date.now();
 let heartbeatMissCount = 0;
 const HEARTBEAT_TIMEOUT = 30000;
-const MAX_HEARTBEAT_MISS = 3;
+// 容忍度由 3 提到 5：允许最长 ~150s 内网络短暂抖动而不误判断线，
+// 减少因瞬时卡顿导致的「假断连」重连刷屏（根因多为服务器↔游戏链路抖动）。
+const MAX_HEARTBEAT_MISS = 5;
 
 function startHeartbeat() {
     networkScheduler.clear('heartbeat_interval');

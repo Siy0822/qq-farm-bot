@@ -65,11 +65,28 @@ const allLogs = computed(() => {
     time: log.time,
     tag: log.action === 'Error' ? '错误' : '系统',
     msg: log.reason ? `${log.msg} (${log.reason})` : log.msg,
+    action: log.action,
     isAccountLog: true,
   }))
 
-  return [...sLogs, ...aLogs]
+  const merged = [...sLogs, ...aLogs]
     .sort((a: any, b: any) => (a.ts || 0) - (b.ts || 0))
+
+  // 配对标记：若某条「连接中断」重连日志之后存在对应的「已恢复在线」日志，
+  // 则将其标记为已恢复，前端灰显，避免重连记录刷屏、常驻显眼位置。
+  const recoverTsList = merged
+    .filter((l: any) => l.action === 'reconnect_success' || /已恢复在线/.test(l.msg || ''))
+    .map((l: any) => l.ts || 0)
+  for (const log of merged) {
+    const isInterrupt = log.action === 'ws_reconnect_failed' || /连接中断|重连失败/.test(log.msg || '')
+    if (isInterrupt) {
+      const recovered = recoverTsList.some(ts => ts > (log.ts || 0))
+      if (recovered)
+        log.recovered = true
+    }
+  }
+
+  return merged
 })
 
 const modules = [
@@ -712,11 +729,11 @@ useIntervalFn(updateCountdowns, 1000)
                 运行账号后，这里会持续追加巡查、种植、任务和出售记录。
               </div>
             </div>
-            <div v-for="log in allLogs" :key="log.ts + log.msg" class="mb-1 break-all">
+            <div v-for="log in allLogs" :key="log.ts + log.msg" class="mb-1 break-all" :class="log.recovered ? 'opacity-45' : ''">
               <span class="mr-2 select-none text-gray-400">[{{ formatLogTime(log.time) }}]</span>
               <span class="mr-2 rounded px-1.5 py-0.5 text-xs font-bold" :class="getLogTagClass(log.tag)">{{ log.tag }}</span>
               <span v-if="log.meta?.event" class="mr-2 rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-500 dark:bg-blue-900/20 dark:text-blue-400">{{ getEventLabel(log.meta.event) }}</span>
-              <span :class="getLogMsgClass(log.tag)">{{ log.msg }}</span>
+              <span :class="[getLogMsgClass(log.tag), log.recovered ? 'line-through decoration-gray-400' : '']">{{ log.msg }}<span v-if="log.recovered" class="ml-1 text-xs text-green-500">（已恢复）</span></span>
             </div>
           </div>
         </div>
