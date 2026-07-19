@@ -30,6 +30,38 @@ const showMorePanel = ref(false)
 // 用户手动收起/展开：收起后 dock 整体让出底部，避免遮挡页面二级菜单/底部按钮
 const collapsed = ref(false)
 
+// 全屏遮罩弹窗（fixed inset-0 的 modal/drawer）打开时，dock 自动让位，
+// 避免遮挡弹窗内的底部按钮（如 Friends / Admin / Sidebar 等页面的二级菜单弹层）
+const modalOpen = ref(false)
+const dockEl = ref<HTMLElement | null>(null)
+let modalObserver: MutationObserver | null = null
+let modalScanTimer: number | null = null
+
+// 轻量全屏遮罩检测：仅判断 position:fixed 且覆盖接近整个视口的节点（排除 dock 自身）
+function scanFullscreenModal(): boolean {
+  const els = document.querySelectorAll('*')
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  for (const el of Array.from(els)) {
+    const node = el as HTMLElement
+    if (node === dockEl.value) continue
+    const cs = getComputedStyle(node)
+    if (cs.position !== 'fixed') continue
+    const rect = node.getBoundingClientRect()
+    const covers = rect.width >= vw - 4 && rect.height >= vh - 4 && rect.top <= 2 && rect.left <= 2
+    if (covers) return true
+  }
+  return false
+}
+
+function scheduleModalScan() {
+  if (modalScanTimer !== null) return
+  modalScanTimer = window.setTimeout(() => {
+    modalScanTimer = null
+    modalOpen.value = scanFullscreenModal()
+  }, 120)
+}
+
 // 下滑隐藏、上滑/点击底部弹出
 const navHidden = ref(false)
 let lastScrollY = 0
@@ -80,19 +112,29 @@ function handleBottomClick(e: MouseEvent) {
 onMounted(() => {
   window.addEventListener('scroll', handleScroll, { passive: true })
   window.addEventListener('click', handleBottomClick, { passive: true })
+  // 监听全局 DOM 变动，检测全屏遮罩弹窗的打开/关闭
+  if (typeof MutationObserver !== 'undefined') {
+    modalObserver = new MutationObserver(scheduleModalScan)
+    modalObserver.observe(document.body, { childList: true, subtree: true })
+    // 初次扫描
+    modalOpen.value = scanFullscreenModal()
+  }
 })
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
   window.removeEventListener('click', handleBottomClick)
+  if (modalObserver) modalObserver.disconnect()
+  if (modalScanTimer !== null) clearTimeout(modalScanTimer)
 })
 </script>
 
 <template>
   <div class="ambient-glow" :class="{ 'ambient-glow--hidden': navHidden || collapsed }" />
   <div
+    ref="dockEl"
     class="floating-nav-wrapper"
-    :class="{ 'nav-hidden': navHidden, 'dock-collapsed': collapsed }"
+    :class="{ 'nav-hidden': navHidden, 'dock-collapsed': collapsed, 'dock-modal-open': modalOpen }"
   >
     <Transition name="more-panel">
       <div v-if="showMorePanel" class="more-panel">
@@ -144,7 +186,7 @@ onUnmounted(() => {
     </Transition>
     <!-- 收起态：仅保留一个可点击的小药丸，不遮挡页面；展开态在 nav 上沿显示把手 -->
     <button
-      v-if="collapsed"
+      v-if="collapsed && !modalOpen"
       class="dock-collapsed-pill"
       aria-label="展开导航栏"
       @click="toggleCollapse"
@@ -152,7 +194,7 @@ onUnmounted(() => {
       <span class="i-carbon-chevron-up" />
     </button>
     <button
-      v-else-if="!navHidden"
+      v-else-if="!navHidden && !collapsed && !modalOpen"
       class="dock-handle"
       aria-label="收起导航栏"
       @click="toggleCollapse"
@@ -184,6 +226,13 @@ onUnmounted(() => {
 
 /* 用户收起：整体下移并禁用交互，完全让出底部给页面内容 */
 .floating-nav-wrapper.dock-collapsed {
+  transform: translateY(calc(100% + 60px));
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 全屏遮罩弹窗打开时：dock 完全让位（不挡弹窗内底部按钮），连把手/药丸也不显示 */
+.floating-nav-wrapper.dock-modal-open {
   transform: translateY(calc(100% + 60px));
   opacity: 0;
   pointer-events: none;
