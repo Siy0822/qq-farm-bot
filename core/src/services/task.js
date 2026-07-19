@@ -186,7 +186,7 @@ function analyzeTaskList(tasks, category = 'main') {
 }
 
 /**
- * 构建每日任务列表（回退：从 tasks + growth_tasks 中筛选 task_type=3 的）
+ * 构建每日任务列表（回退：从 tasks + growth_tasks 中筛选 task_type=2 的）
  */
 function buildDailyTasksForDebug(taskInfoRaw) {
   const info = taskInfoRaw && typeof taskInfoRaw === 'object' ? taskInfoRaw : {};
@@ -197,7 +197,21 @@ function buildDailyTasksForDebug(taskInfoRaw) {
     ...(Array.isArray(info.tasks) ? info.tasks : []),
     ...(Array.isArray(info.growth_tasks) ? info.growth_tasks : []),
   ];
-  return allTasks.filter((t) => toNum(t && t.task_type) === 3);
+  return allTasks.filter((t) => toNum(t && t.task_type) === 2);
+}
+
+/**
+ * 构建成长任务列表（回退：从 tasks 中筛选 task_type=1 的）
+ * 某些服务器将成长任务放在 tasks 数组中，用 task_type=1 标识，
+ * 而不是单独的 growth_tasks 数组。
+ */
+function buildGrowthTasks(taskInfoRaw) {
+  const info = taskInfoRaw && typeof taskInfoRaw === 'object' ? taskInfoRaw : {};
+  const growthTasks = Array.isArray(info.growth_tasks) ? info.growth_tasks : [];
+  if (growthTasks.length > 0) return growthTasks;
+
+  const allTasks = Array.isArray(info.tasks) ? info.tasks : [];
+  return allTasks.filter((t) => toNum(t && t.task_type) === 1);
 }
 
 // ---- 活跃奖励处理 ----
@@ -336,7 +350,7 @@ async function checkAndClaimTasks() {
     // 收集可领取任务
     const dailyTasks = buildDailyTasksForDebug(taskInfo);
     const dailyClaimable = analyzeTaskList(dailyTasks, 'daily');
-    const growthClaimable = analyzeTaskList(taskInfo.growth_tasks || [], 'growth');
+    const growthClaimable = analyzeTaskList(buildGrowthTasks(taskInfo), 'growth');
     const mainClaimable = analyzeTaskList(taskInfo.tasks || [], 'main');
     const allClaimable = [...dailyClaimable, ...growthClaimable, ...mainClaimable];
 
@@ -389,7 +403,7 @@ function onTaskInfoNotify(payload) {
 
   const claimable = [
     ...analyzeTaskList(payload.daily_tasks || [], 'daily'),
-    ...analyzeTaskList(payload.growth_tasks || [], 'growth'),
+    ...analyzeTaskList(buildGrowthTasks(payload), 'growth'),
     ...analyzeTaskList(payload.tasks || [], 'main'),
   ];
 
@@ -468,7 +482,7 @@ module.exports = {
 
       return {
         key: 'task_claim',
-        doneToday: completed.length >= Math.min(3, dailyTasks.length),
+        doneToday: completed.length >= 3,
         lastClaimAt: taskClaimLastAt,
         claimableCount: claimable.length,
         pendingCount: unlocked.length,
@@ -495,7 +509,7 @@ module.exports = {
     try {
       const reply = await getTaskInfo();
       const taskInfo = (reply && reply.task_info) ? reply.task_info : {};
-      const growthTasks = Array.isArray(taskInfo.growth_tasks) ? taskInfo.growth_tasks : [];
+      const growthTasks = buildGrowthTasks(taskInfo);
 
       const tasks = growthTasks.map((t) => {
         const progress = Math.max(0, toNum(t && t.progress));
