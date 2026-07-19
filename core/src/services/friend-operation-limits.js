@@ -13,15 +13,6 @@ let localBadOperationCount = 0;
 let onExpLimitReachedCallback = null;
 let onExpLimitResetCallback = null;
 
-// ===== 经验满判定（基于经验增量，不依赖服务端 day_ex_times_lt）=====
-// 本服 day_ex_times_lt（帮好友得经验每日上限）恒为 0，无法据此判定，
-// 故改用：帮好友成功后若本号总经验未增长，计一次"无收益"；连续 N 次无收益
-// 且当天累计帮忙≥M 次，即判定经验已满，切"仅帮护主犬"。
-let consecutiveNoExpHelps = 0;
-let totalHelpsThisSession = 0;
-const EXP_FULL_CONSECUTIVE = 10; // 连续 N 次"帮忙成功但经验未增"→判定经验满
-const EXP_FULL_MIN_HELPS = 15;   // 至少先帮过 M 次才允许判定，避免个别无收益/延迟误判
-
 const PUT_BUG_OPERATION_ID = 10005;
 const PUT_WEED_OPERATION_ID = 10006;
 const GOLDEN_BUG_OPERATION_ID = 10015;
@@ -66,8 +57,6 @@ function checkDailyReset() {
       operationLimits.clear();
       localBadOperationCount = 0;
       canGetHelpExp = true;
-      consecutiveNoExpHelps = 0;
-      totalHelpsThisSession = 0;
       helpAutoDisabledByLimit = false;
       log('好友', '新的一天已开始，自动恢复帮忙操作功能', {
         module: 'friend',
@@ -127,32 +116,6 @@ function updateOperationLimits(limits) {
         dayExpTimesLimit: toNum(limit.day_ex_times_lt),
       });
     }
-  }
-}
-
-/**
- * 经验满判定（基于经验增量，不依赖服务端恒为 0 的 day_ex_times_lt）。
- * 每次帮好友成功后对比本号总经验前后值：
- *   - 经验增长 → 重置"无收益"连续计数；
- *   - 经验未增 → 连续计数 +1；
- * 当累计帮忙≥ MIN 次且连续无收益≥ CONSECUTIVE 次，判定经验已满，切"仅帮护主犬"。
- * 连续阈值可过滤个别操作无收益/网络延迟造成的误判。
- */
-function detectExpFull(expBefore) {
-  const expAfter = toNum((getUserState() || {}).exp);
-  if (expAfter > expBefore) {
-    consecutiveNoExpHelps = 0;
-  } else {
-    consecutiveNoExpHelps += 1;
-  }
-  totalHelpsThisSession += 1;
-
-  if (totalHelpsThisSession >= EXP_FULL_MIN_HELPS &&
-      consecutiveNoExpHelps >= EXP_FULL_CONSECUTIVE) {
-    autoDisableHelpByExpLimit();
-  } else if (totalHelpsThisSession >= EXP_FULL_MIN_HELPS &&
-             consecutiveNoExpHelps >= Math.floor(EXP_FULL_CONSECUTIVE / 2)) {
-    log('debug', `经验未增连续 ${consecutiveNoExpHelps} 次（累计帮忙 ${totalHelpsThisSession} 次），接近经验满`);
   }
 }
 
@@ -297,8 +260,12 @@ async function helpWater(gid, landIds, checkExpLimit = false) {
   updateOperationLimits(reply.operation_limits);
 
   if (checkExpLimit) {
-    // 经验满判定改为基于经验增量（detectExpFull），不再依赖服务端恒为 0 的 day_ex_times_lt
-    detectExpFull(expBefore);
+    // 等待服务端经验结算后比对，参考成熟实现：sleep 200ms 再检查 exp
+    await sleep(200);
+    const expAfter = toNum((getUserState() || {}).exp);
+    if (expAfter <= expBefore) {
+      autoDisableHelpByExpLimit();
+    }
   }
 
   return reply;
@@ -324,8 +291,11 @@ async function helpWeed(gid, landIds, checkExpLimit = false) {
   updateOperationLimits(reply.operation_limits);
 
   if (checkExpLimit) {
-    // 经验满判定改为基于经验增量（detectExpFull），不再依赖服务端恒为 0 的 day_ex_times_lt
-    detectExpFull(expBefore);
+    await sleep(200);
+    const expAfter = toNum((getUserState() || {}).exp);
+    if (expAfter <= expBefore) {
+      autoDisableHelpByExpLimit();
+    }
   }
 
   return reply;
@@ -351,8 +321,11 @@ async function helpInsecticide(gid, landIds, checkExpLimit = false) {
   updateOperationLimits(reply.operation_limits);
 
   if (checkExpLimit) {
-    // 经验满判定改为基于经验增量（detectExpFull），不再依赖服务端恒为 0 的 day_ex_times_lt
-    detectExpFull(expBefore);
+    await sleep(200);
+    const expAfter = toNum((getUserState() || {}).exp);
+    if (expAfter <= expBefore) {
+      autoDisableHelpByExpLimit();
+    }
   }
 
   return reply;

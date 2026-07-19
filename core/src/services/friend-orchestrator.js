@@ -82,25 +82,12 @@ function ensureExpLimitCallback() {
 }
 
 // ===== 好友列表 TTL 缓存（一轮巡查内复用，避免 help tick + steal tick 重复拉取）=====
-const FRIENDS_LIST_CACHE_TTL_MS = 30000;
-let friendsListCacheState = { reply: null, expireAt: 0 };
-
-function clearCachedFriendsList() {
-  friendsListCacheState = { reply: null, expireAt: 0 };
-}
-
-// 护主犬好友"帮助无效果"冷却：避免列表快照过期导致反复尝试
+// 护主犬"无有效操作"冷却 30s：避免同一好友反复进农场无效果（同时服务端列表数据也可能延迟更新）
 const guardDogNoEffectCooldown = new Map(); // gid → expireAt
-const GUARD_DOG_NO_EFFECT_COOLDOWN_MS = 5 * 60 * 1000; // 5 分钟
+const GUARD_DOG_NO_EFFECT_COOLDOWN_MS = 30000;
 
 async function getCachedFriendsList(forceRefresh = false) {
-  const now = Date.now();
-  if (!forceRefresh && friendsListCacheState.reply && now < friendsListCacheState.expireAt) {
-    return friendsListCacheState.reply;
-  }
-  const reply = await getAllFriends();
-  friendsListCacheState = { reply, expireAt: now + FRIENDS_LIST_CACHE_TTL_MS };
-  return reply;
+  return await getAllFriends();
 }
 
 // ===== Helpers =====
@@ -120,7 +107,6 @@ function isTransientNetworkError(err) {
 
 function clearFriendsListCache() {
   setFriendsListCache(null);
-  clearCachedFriendsList();
 }
 
 async function bootstrapFriendDogInfoCacheIfNeeded() {
@@ -362,7 +348,7 @@ async function checkFriends(options = {}) {
       if (helpExpReached && guardDogGidSet.size > 0) {
         // Experience limit reached — only help guard dog friends
         const now = Date.now();
-        // 清理过期冷却
+        // 清理过期冷却，冷却时间=30s（匹配快照缓存 TTL，避免旧数据反复查同一好友）
         for (const [k, v] of guardDogNoEffectCooldown.entries()) {
           if (v <= now) guardDogNoEffectCooldown.delete(k);
         }
@@ -372,7 +358,7 @@ async function checkFriends(options = {}) {
           if (gid === userState.gid) continue;
           if (!guardDogGidSet.has(gid)) continue;
           if (blacklist.has(gid)) continue;
-          // 跳过冷却中的好友（上一轮帮助无效果，列表快照可能过期）
+          // 冷却中的好友跳过——快照数据可能已过期，等下次刷新后再查
           if (guardDogNoEffectCooldown.has(gid)) continue;
 
           const name = friend.remark || friend.name || `GID:${gid}`;
@@ -401,33 +387,34 @@ async function checkFriends(options = {}) {
             helpCount: helpTargets.length,
           });
         }
-      } else {
-        for (const friend of rawFriends) {
-          const gid = toNum(friend.gid);
-          if (gid === userState.gid) continue;
-          if (blacklist.has(gid)) continue;
+    } else {
+      for (const friend of rawFriends) {
+        const gid = toNum(friend.gid);
+        if (gid === userState.gid) continue;
+        if (blacklist.has(gid)) continue;
 
-          const name = friend.remark || friend.name || `GID:${gid}`;
-          const plant = friend.plant;
-          const dryNum = plant ? toNum(plant.dry_num) : 0;
-          const weedNum = plant ? toNum(plant.weed_num) : 0;
-          const insectNum = plant ? toNum(plant.insect_num) : 0;
+        const dogId = toNum(friend.dogId);
+        const hasGuardDog = guardDogGidSet.has(gid) || dogId === 90021;
 
-          if (dryNum > 0 || weedNum > 0 || insectNum > 0) {
-            const dogId = toNum(friend.dogId);
-            const hasGuardDog = guardDogGidSet.has(gid) || dogId === 90021;
-            helpTargets.push({
-              gid,
-              name,
-              dryNum,
-              weedNum,
-              insectNum,
-              dogId,
-              hasGuardDog,
-            });
-          }
+        const name = friend.remark || friend.name || `GID:${gid}`;
+        const plant = friend.plant;
+        const dryNum = plant ? toNum(plant.dry_num) : 0;
+        const weedNum = plant ? toNum(plant.weed_num) : 0;
+        const insectNum = plant ? toNum(plant.insect_num) : 0;
+
+        if (dryNum > 0 || weedNum > 0 || insectNum > 0) {
+          helpTargets.push({
+            gid,
+            name,
+            dryNum,
+            weedNum,
+            insectNum,
+            dogId,
+            hasGuardDog,
+          });
         }
       }
+    }
     }
 
     // Sort: steal by level desc, help by need desc (guard dogs first)
@@ -479,7 +466,7 @@ async function checkFriends(options = {}) {
             target, tally, userState.gid, userState.accountId,
             ignoreExpLimit, helpExpReached
           );
-          // 护主犬好友帮助无效果（列表快照过期），加冷却避免反复尝试
+          // 护主犬无有效操作 → 加 30s 冷却（匹配快照缓存 TTL），避免用过期快照反复查
           if (helpExpReached && target.hasGuardDog && result && !result.acted) {
             guardDogNoEffectCooldown.set(toNum(target.gid), Date.now() + GUARD_DOG_NO_EFFECT_COOLDOWN_MS);
           }
@@ -611,7 +598,11 @@ async function friendCheckLoop() {
 
   if (!friendLoopRunning) return;
 
-  const interval = Math.max(30000, CONFIG.friendCheckInterval);
+  // 经验满(仅帮护主犬)模式下缩短巡查间隔，让护主犬好友更快被复查
+  const expLimitActive = !!isAutomationOn('friend_help_exp_limit') && !getCanGetHelpExp();
+  const interval = expLimitActive
+    ? Math.max(15000, CONFIG.friendCheckInterval)
+    : Math.max(30000, CONFIG.friendCheckInterval);
   friendScheduler.setTimeoutTask('friend_check_loop', interval, () => friendCheckLoop());
 }
 

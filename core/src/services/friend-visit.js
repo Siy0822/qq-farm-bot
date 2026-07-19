@@ -754,12 +754,15 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
       );
       if (okCount > 0) {
         if (expLimitMode && hasGuardDog) {
+          const freshWeed = lands.reduce((s, l) => s + toNum(l.plant && l.plant.weed_num), 0);
           log('好友', `[护主犬好友] ✅ ${name}: 除${opt.name}${okCount}`, {
             module: 'friend',
             event: '护主犬好友帮助成功',
             friendName: name,
             operation: opt.name,
             count: okCount,
+            snapWeed: toNum(friend.weedNum),
+            freshWeed,
           });
         }
         actionLogs.push(`${opt.name}${okCount}`);
@@ -783,6 +786,12 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
     });
   } else if (expLimitMode && hasGuardDog) {
     // 护主犬好友但所有操作都没成功，记录原因方便排查
+    // 调试：对比 列表快照(friend.dryNum/weedNum/insectNum) 与 进农场实测土地合计，
+    // 用于判断是"快照滞后"还是"分析漏判"。
+    const freshDry = lands.reduce((s, l) => s + toNum(l.plant && l.plant.dry_num), 0);
+    const freshWeed = lands.reduce((s, l) => s + toNum(l.plant && l.plant.weed_num), 0);
+    const freshInsect = lands.reduce((s, l) => s + toNum(l.plant && l.plant.insect_num), 0);
+    const weedOwners = lands.reduce((s, l) => s + ((l.plant && l.plant.weed_owners) ? l.plant.weed_owners.length : 0), 0);
     logWarn('好友', `[护主犬好友] ${name}: 进入农场但无有效操作（可能土地状态已变或次数用完）`, {
       module: 'friend',
       event: '护主犬好友帮助无效果',
@@ -791,6 +800,14 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
       needWater: analysis.needWater.length,
       needWeed: analysis.needWeed.length,
       needBug: analysis.needBug.length,
+      lands: lands.length,
+      snapDry: toNum(friend.dryNum),
+      snapWeed: toNum(friend.weedNum),
+      snapInsect: toNum(friend.insectNum),
+      freshDry,
+      freshWeed,
+      freshInsect,
+      freshWeedOwners: weedOwners,
     });
   }
 
