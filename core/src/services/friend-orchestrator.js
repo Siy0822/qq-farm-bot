@@ -27,6 +27,7 @@ const {
   canOperate,
   canOperateBad,
   canGetExpByCandidates,
+  hasKnownHelpExpLimits,
   getCanGetHelpExp,
   setCanGetHelpExp,
   getHelpAutoDisabledByLimit,
@@ -288,16 +289,27 @@ async function checkFriends(options = {}) {
       : new Set();
     const expLimitEnabled = !!isAutomationOn('friend_help_exp_limit');
 
-    // 修复：canGetHelpExp 一旦被 autoDisableHelpByExpLimit 设为 false 就锁死，
-    // 导致每轮都走"只帮护主犬"分支。这里先检查服务端 operation_limits，
-    // 如果经验其实没满，重置 canGetHelpExp = true。
-    if (expLimitEnabled && !getCanGetHelpExp()) {
+    // 修复：canGetHelpExp 被 autoDisableHelpByExpLimit 设为 false 后，
+    // 必须确认"服务端数据确实显示经验还有额度"才能重置回 true。
+    // 关键：只有当 operationLimits 里真正存在这 6 个经验 id 的记录、且其中有
+    // 任意一个尚未满时，才允许重置。若 operationLimits 里压根没有这些 id 的数据
+    // （例如新号/跨日重置后尚未帮助过，或服务端未回传这些 id），则无法判断，
+    // 必须保持 canGetHelpExp=false，继续只帮护主犬，绝不能无差别帮所有人。
+    if (expLimitEnabled && !getCanGetHelpExp() && getHelpAutoDisabledByLimit()) {
       const allExpIds = [0x2715, 0x2713, 0x2716, 0x2712, 0x2717, 0x2711];
-      if (canGetExpByCandidates(allExpIds)) {
+      const hasKnownLimit = hasKnownHelpExpLimits(allExpIds);
+      const anyExpLeft = canGetExpByCandidates(allExpIds);
+      if (hasKnownLimit && anyExpLeft) {
         setCanGetHelpExp(true);
         log('好友', '经验上限已重置（服务端显示仍有经验额度）', {
           module: 'friend',
           event: '经验上限重置',
+        });
+      } else if (!hasKnownLimit) {
+        // 没有服务端经验额度数据，保守处理：保持只帮护主犬模式，避免无差别帮助。
+        log('好友', '经验额度数据缺失，维持仅帮助护主犬模式', {
+          module: 'friend',
+          event: '经验上限维持',
         });
       }
     }

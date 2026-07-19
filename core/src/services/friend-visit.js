@@ -657,7 +657,10 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
   const checkExpLimit = expLimitEnabled && !ignoreExpLimit;
   const hasGuardDog = !!friend.hasGuardDog;
 
-  if (!checkExpLimit) setCanGetHelpExp(true);
+  // 仅当"经验上限开关本就关闭"时，才自由保持/恢复 canGetHelpExp=true。
+  // 若开关开着却因 ignoreExpLimit 导致本次 checkExpLimit=false，绝不擅自清掉已触发的
+  // 仅帮护主犬禁用状态，否则会出现"无差别帮所有人"的回退。
+  if (!expLimitEnabled) setCanGetHelpExp(true);
 
   // Skip if exp limit reached and no guard dog
   if (checkExpLimit && !getCanGetHelpExp() && !hasGuardDog) {

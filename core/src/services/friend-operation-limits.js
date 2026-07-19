@@ -129,6 +129,20 @@ function canGetExpByCandidates(expIds = []) {
 }
 
 /**
+ * 判断服务端是否已回传过这若干经验 id 中任意一个的额度数据。
+ * canGetExp 在"没有记录"时返回 true（认为还能得经验），这会和"真有额度"混淆。
+ * 此函数专门区分"无记录（数据缺失）"与"有记录且未满"，供"仅帮护主犬"重置逻辑使用，
+ * 避免 operationLimits 为空时误把经验上限重置回 true，导致无差别帮助所有人。
+ */
+function hasKnownHelpExpLimits(expIds = []) {
+  const ids = Array.isArray(expIds) ? expIds : [expIds];
+  for (const id of ids) {
+    if (operationLimits.has(toNum(id))) return true;
+  }
+  return false;
+}
+
+/**
  * Check if an operation can still be performed (by operation count limit).
  */
 function canOperate(operationId, fallbackLimit = 0) {
@@ -509,6 +523,7 @@ module.exports = {
   updateOperationLimits,
   canGetExp,
   canGetExpByCandidates,
+  hasKnownHelpExpLimits,
   canOperate,
   canOperateBad,
   getRemainingTimes,
