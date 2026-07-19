@@ -54,3 +54,9 @@ body {
     0 0 10px var(--theme-primary),
     0 0 5px var(--theme-primary) !important;
 }
+
+/* 弹窗遮罩底部留安全区：让居中确认的弹窗整体上移，
+   避免其底部按钮被底部悬浮导航栏(dock)遮挡 */
+[class*="overlay"] {
+  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important;
+}
