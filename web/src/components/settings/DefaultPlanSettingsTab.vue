@@ -54,6 +54,7 @@ function createStrategySettings() {
     prioritize2x2Crops: false,
     bagSeedPriority: [] as number[],
     bagSeedFallbackStrategy: 'level',
+    bagPriorityLandTypes: ['purple', 'gold', 'black', 'red', 'normal'] as string[],
     stealDelaySeconds: 1,
     plantOrderRandom: true,
     plantDelaySeconds: 2,
@@ -108,6 +109,9 @@ function applyPlan(data: any) {
     intervals: { ...createStrategySettings().intervals, ...(config.intervals || {}) },
     friendQuietHours: { ...createStrategySettings().friendQuietHours, ...(config.friendQuietHours || {}) },
     bagSeedPriority: Array.isArray(config.bagSeedPriority) ? [...config.bagSeedPriority] : [],
+    bagPriorityLandTypes: (Array.isArray(config.bagPriorityLandTypes) && config.bagPriorityLandTypes.length > 0)
+      ? [...config.bagPriorityLandTypes]
+      : ['purple', 'gold', 'black', 'red', 'normal'],
   }
   const automationDefaults = createAutomationSettings()
   automationSettings.value = {

@@ -208,6 +208,7 @@ function createDataProvider(deps) {
                 autoAcceptFriendMinLevel: s.autoAcceptFriendMinLevel,
                 bagSeedPriority: s.bagSeedPriority,
                 bagSeedFallbackStrategy: s.bagSeedFallbackStrategy,
+                bagPriorityLandTypes: s.bagPriorityLandTypes,
             };
             store.applyConfigSnapshot(patch, { accountId: id });
             const rev = nextConfigRevision();
@@ -235,6 +236,7 @@ function createDataProvider(deps) {
                 autoAcceptFriendMinLevel: store.getAutoAcceptFriendMinLevel(id),
                 bagSeedPriority: store.getBagSeedPriority(id),
                 bagSeedFallbackStrategy: store.getBagSeedFallbackStrategy(id),
+                bagPriorityLandTypes: store.getBagPriorityLandTypes(id),
                 configRevision: rev
             };
         },

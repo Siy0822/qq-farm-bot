@@ -496,5 +496,7 @@ module.exports = {
   isOccupiedSlaveLand,
   analyzeLands,
   resolveRemovableHarvestedLands,
-  getLandsDetail
+  getLandsDetail,
+  getLandTypeByLevel,
+  getLandTypeNameByLevel
 };

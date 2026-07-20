@@ -7,17 +7,27 @@ const {
   getPreferredSeed,
   getBagSeedPriority,
   getBagSeedFallbackStrategy,
+  getBagPriorityLandTypes,
   getPrioritize2x2Crops,
 } = require('../models/store');
 const { getPlantRankings } = require('./analytics');
 const { getBagSeeds } = require('./warehouse');
 const { getShopInfo, buyGoods, getSeedShopId } = require('./farm-api');
-const { buildLandMap, getDisplayLandContext } = require('./farm-land-analyzer');
+const { buildLandMap, getDisplayLandContext, getLandTypeByLevel } = require('./farm-land-analyzer');
 const { runFertilizerByConfig } = require('./farm-fertilizer');
 const { removePlant } = require('./farm-api');
 
 const FARM_COLUMNS = 4;
 const FARM_ROWS = 6;
+
+// 土地品质类型 → 中文名（用于日志展示）
+const LAND_TYPE_NAME_MAP = {
+  purple: '紫土地',
+  gold: '金土地',
+  black: '黑土地',
+  red: '红土地',
+  normal: '普通地'
+};
 let reserved2x2GroupKeys = [];
 let last2x2WaitingSignature = '';
 const failed2x2Retries = new Map();
@@ -904,29 +914,79 @@ async function autoPlantEmptyLands(deadLandIds, emptyLandIds, lands = []) {
 
   // 背包优先策略
   if (strategy === 'bag_priority') {
-    let bagResult;
-    try {
-      bagResult = await plantFromBagSeeds(normalEmptyLands, accountId);
-    } catch (err) {
-      logWarn('种植', `读取背包种子失败，本轮跳过第二优先策略以避免误购: ${err.message}`, {
-        module: 'farm', event: '种植种子', result: 'bag_load_error'
+    // 按"优先品质地块"配置拆分空地：
+    // 指定品质地块 → 背包种子优先种植；其余地块 → 直接走第二优先策略
+    const allowedLandTypes = getBagPriorityLandTypes(accountId);
+    const landTypeSet = new Set(Array.isArray(allowedLandTypes) ? allowedLandTypes : []);
+    const isUnrestricted = landTypeSet.size === 0 || landTypeSet.size >= 5;
+
+    let preferredEmptyLands = normalEmptyLands;
+    let otherEmptyLands = [];
+
+    if (!isUnrestricted) {
+      // 构建 landId → 品质类型 映射（复用主流程已传入的 lands，避免额外请求）
+      const landTypeMap = new Map();
+      for (const land of (Array.isArray(lands) ? lands : [])) {
+        if (!land) continue;
+        const landId = toNum(land.id);
+        if (!landId) continue;
+        landTypeMap.set(landId, getLandTypeByLevel(land.level));
+      }
+      preferredEmptyLands = [];
+      otherEmptyLands = [];
+      for (const id of normalEmptyLands) {
+        const landId = toNum(id);
+        const landType = landTypeMap.get(landId);
+        if (landType && landTypeSet.has(landType)) preferredEmptyLands.push(id);
+        else otherEmptyLands.push(id);
+      }
+      const typeNames = allowedLandTypes.map(t => LAND_TYPE_NAME_MAP[t] || t).join('、');
+      log('种植', `背包优先：指定品质地块[${typeNames}]空地 ${preferredEmptyLands.length} 块，其余空地 ${otherEmptyLands.length} 块将按第二优先策略种植`, {
+        module: 'farm', event: '种植种子', result: 'land_filter',
+        strategy: 'bag_priority', preferred: preferredEmptyLands.length, other: otherEmptyLands.length
       });
-      return result;
     }
 
-    const plantedLands = bagResult.plantedLandIds || [];
-    result.plantedLands.push(...plantedLands);
-    result.plantedCount += Number(bagResult.totalPlanted || 0);
-    result.occupiedCount += Number(bagResult.occupiedCount || 0);
+    const plantedLands = [];
 
-    // 背包种完后还有空地 → 使用第二优先策略
-    if (bagResult.fallbackAllowed && bagResult.remainingLandIds.length > 0) {
+    // 仅在指定品质地块有空位时，才执行背包种子优先（第一策略）
+    let bagRemainingIds = [];
+    let bagFallbackAllowed = true;
+    if (preferredEmptyLands.length > 0) {
+      let bagResult;
+      try {
+        bagResult = await plantFromBagSeeds(preferredEmptyLands, accountId);
+      } catch (err) {
+        logWarn('种植', `读取背包种子失败，本轮跳过第二优先策略以避免误购: ${err.message}`, {
+          module: 'farm', event: '种植种子', result: 'bag_load_error'
+        });
+        return result;
+      }
+      plantedLands.push(...(bagResult.plantedLandIds || []));
+      result.plantedLands.push(...(bagResult.plantedLandIds || []));
+      result.plantedCount += Number(bagResult.totalPlanted || 0);
+      result.occupiedCount += Number(bagResult.occupiedCount || 0);
+      bagRemainingIds = bagResult.remainingLandIds || [];
+      bagFallbackAllowed = bagResult.fallbackAllowed;
+    }
+
+    // 第二优先策略补种范围：
+    //  - 非指定品质地块（otherEmptyLands）：直接补种
+    //  - 指定地块中背包种子未能覆盖的剩余空地（背包用完/无对应种子时）
+    const fallbackLandIds = [...otherEmptyLands];
+    if (bagFallbackAllowed && bagRemainingIds.length > 0) {
+      fallbackLandIds.push(...bagRemainingIds);
+    }
+    // 背包部分种植失败(bagFallbackAllowed=false)时，指定地块剩余空位本轮不补种以避免误购；
+    // 但非指定地块仍应正常按第二策略种植。
+
+    if (fallbackLandIds.length > 0) {
       const fallbackStrategy = getBagSeedFallbackStrategy(accountId) || 'level';
       log('种植', `开始按第二优先策略"${getPlantingStrategyLabel(fallbackStrategy)}"补种剩余空地`, {
         module: 'farm', event: '种植种子', result: 'fallback_start',
-        strategy: fallbackStrategy, remainingCount: bagResult.remainingLandIds.length
+        strategy: fallbackStrategy, remainingCount: fallbackLandIds.length
       });
-      const shopResult = await plantFromShop(bagResult.remainingLandIds, userState, fallbackStrategy, accountId);
+      const shopResult = await plantFromShop(fallbackLandIds, userState, fallbackStrategy, accountId);
       const shopPlantedLands = shopResult.plantedLands || [];
       plantedLands.push(...shopPlantedLands);
       result.plantedLands.push(...shopPlantedLands);

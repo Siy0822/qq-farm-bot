@@ -269,6 +269,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
     fertilizerBuyCheckIntervalMinutes: 60,
     bagSeedPriority: [],
     bagSeedFallbackStrategy: 'level',
+    bagPriorityLandTypes: [...DEFAULT_FERTILIZER_LAND_TYPES],
     autoAcceptFriendMinLevel: 0,
     goldenBugKeepCount: 0,
     goldenBugRoundLimit: 24,
@@ -319,6 +320,20 @@ function normalizeFertilizerLandTypes(rawTypes, fallback = DEFAULT_FERTILIZER_LA
         result.push(key);
     }
     return result;
+}
+
+// 背包种子优先策略：优先种植的指定品质地块（默认全选=不限制，向后兼容）
+function normalizeBagPriorityLandTypes(rawTypes, fallback = DEFAULT_FERTILIZER_LAND_TYPES) {
+    const input = Array.isArray(rawTypes) ? rawTypes : fallback;
+    const result = [];
+    for (const item of input) {
+        const key = String(item || '').trim().toLowerCase();
+        if (!FERTILIZER_LAND_TYPE_SET.has(key)) continue;
+        if (result.includes(key)) continue;
+        result.push(key);
+    }
+    // 空数组视为"不限制"，回退到全选，避免误配置导致完全不种背包种子
+    return result.length > 0 ? result : [...DEFAULT_FERTILIZER_LAND_TYPES];
 }
 
 function normalizeOfflineReminder(raw) {
@@ -471,7 +486,8 @@ function cloneAccountConfig(config = DEFAULT_ACCOUNT_CONFIG) {
         goldenBugKeepCount: Math.max(0, Math.min(9999, Number(config.goldenBugKeepCount) || 0)),
         goldenBugRoundLimit: Math.max(1, Math.min(100, Number(config.goldenBugRoundLimit) || 24)),
         bagSeedPriority: normalizeBagSeedPriority(config.bagSeedPriority),
-        bagSeedFallbackStrategy: normalizeBagSeedFallbackStrategy(config.bagSeedFallbackStrategy)
+        bagSeedFallbackStrategy: normalizeBagSeedFallbackStrategy(config.bagSeedFallbackStrategy),
+        bagPriorityLandTypes: normalizeBagPriorityLandTypes(config.bagPriorityLandTypes)
     };
 }
 
@@ -664,6 +680,11 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
         cfg.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(input.bagSeedFallbackStrategy);
     }
 
+    // 背包种子优先：指定品质地块
+    if (input.bagPriorityLandTypes !== undefined && input.bagPriorityLandTypes !== null) {
+        cfg.bagPriorityLandTypes = normalizeBagPriorityLandTypes(input.bagPriorityLandTypes);
+    }
+
     return cfg;
 }
 
@@ -689,7 +710,8 @@ function pickDefaultPlanConfig(raw) {
         goldenBugRoundLimit: cfg.goldenBugRoundLimit,
         autoAcceptFriendMinLevel: cfg.autoAcceptFriendMinLevel,
         bagSeedPriority: [...cfg.bagSeedPriority],
-        bagSeedFallbackStrategy: cfg.bagSeedFallbackStrategy
+        bagSeedFallbackStrategy: cfg.bagSeedFallbackStrategy,
+        bagPriorityLandTypes: [...cfg.bagPriorityLandTypes]
     };
 }
 
@@ -1156,6 +1178,9 @@ function applyConfigSnapshot(patch = {}, opts = {}) {
     if (patch.bagSeedFallbackStrategy !== undefined && patch.bagSeedFallbackStrategy !== null) {
         cfg.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(patch.bagSeedFallbackStrategy);
     }
+    if (patch.bagPriorityLandTypes !== undefined && patch.bagPriorityLandTypes !== null) {
+        cfg.bagPriorityLandTypes = normalizeBagPriorityLandTypes(patch.bagPriorityLandTypes);
+    }
     if (patch.ui && typeof patch.ui === 'object') {
         const theme = String(patch.ui.theme || '').toLowerCase();
         if (theme === 'dark' || theme === 'light') {
@@ -1221,6 +1246,10 @@ function getBagSeedPriority(accountId) {
 
 function getBagSeedFallbackStrategy(accountId) {
     return normalizeBagSeedFallbackStrategy(getAccountConfigSnapshot(accountId).bagSeedFallbackStrategy);
+}
+
+function getBagPriorityLandTypes(accountId) {
+    return normalizeBagPriorityLandTypes(getAccountConfigSnapshot(accountId).bagPriorityLandTypes);
 }
 
 function getIntervals(accountId) {
@@ -1852,6 +1881,7 @@ module.exports = {
     getFriendBadRetryDate,
     getBagSeedPriority,
     getBagSeedFallbackStrategy,
+    getBagPriorityLandTypes,
     getIntervals,
     getFriendQuietHours,
     getKnownFriendGids,

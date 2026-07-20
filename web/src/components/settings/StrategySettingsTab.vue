@@ -25,6 +25,7 @@ interface StrategySettings {
   prioritize2x2Crops: boolean
   bagSeedPriority: number[]
   bagSeedFallbackStrategy: string
+  bagPriorityLandTypes: string[]
   stealDelaySeconds: number
   plantOrderRandom: boolean
   plantDelaySeconds: number
@@ -74,6 +75,14 @@ const emit = defineEmits<{
 }>()
 
 const settings = defineModel<StrategySettings>('settings', { required: true })
+
+const bagPriorityLandTypeOptions = [
+  { label: '紫土地', value: 'purple' },
+  { label: '金土地', value: 'gold' },
+  { label: '黑土地', value: 'black' },
+  { label: '红土地', value: 'red' },
+  { label: '普通地', value: 'normal' },
+]
 </script>
 
 <template>
@@ -146,6 +155,31 @@ const settings = defineModel<StrategySettings>('settings', { required: true })
           label="第二优先策略"
           :options="bagFallbackStrategyOptions"
         />
+
+        <div class="border border-violet-200 rounded-lg bg-violet-50/70 p-3 dark:border-violet-800/50 dark:bg-violet-900/20">
+          <div class="mb-2 text-sm text-violet-800 font-medium dark:text-violet-300">
+            背包种子优先地块
+          </div>
+          <div class="grid grid-cols-2 gap-2 md:grid-cols-5">
+            <label
+              v-for="option in bagPriorityLandTypeOptions"
+              :key="option.value"
+              class="flex cursor-pointer items-center gap-1.5 rounded bg-white px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+            >
+              <input
+                v-model="settings.bagPriorityLandTypes"
+                :value="option.value"
+                type="checkbox"
+                class="h-3.5 w-3.5"
+              >
+              <span>{{ option.label }}</span>
+            </label>
+          </div>
+          <p class="mt-2 text-xs text-violet-700/90 leading-5 dark:text-violet-300/90">
+            仅在勾选的品质地块上按背包种子优先级种植；未勾选地块、以及背包种子用完后剩余的空地，都会按上方"第二优先策略"种植。默认全选表示不限制。
+          </p>
+        </div>
+
         <BagSeedPriorityPanel
           :seeds="bagSeeds"
           :sorted-seeds="sortedBagSeeds"

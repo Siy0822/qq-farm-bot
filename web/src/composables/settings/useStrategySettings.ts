@@ -48,6 +48,7 @@ export function useStrategySettings({
     prioritize2x2Crops: false,
     bagSeedPriority: [] as number[],
     bagSeedFallbackStrategy: 'level',
+    bagPriorityLandTypes: ['purple', 'gold', 'black', 'red', 'normal'] as string[],
     stealDelaySeconds: 0,
     plantOrderRandom: false,
     plantDelaySeconds: 0,
@@ -293,6 +294,9 @@ export function useStrategySettings({
         prioritize2x2Crops: settings.value.prioritize2x2Crops === true,
         bagSeedPriority: settings.value.bagSeedPriority ?? [],
         bagSeedFallbackStrategy: settings.value.bagSeedFallbackStrategy ?? 'level',
+        bagPriorityLandTypes: (settings.value.bagPriorityLandTypes && settings.value.bagPriorityLandTypes.length > 0)
+          ? settings.value.bagPriorityLandTypes
+          : ['purple', 'gold', 'black', 'red', 'normal'],
         stealDelaySeconds: settings.value.stealDelaySeconds ?? 0,
         plantOrderRandom: !!settings.value.plantOrderRandom,
         plantDelaySeconds: settings.value.plantDelaySeconds ?? 0,

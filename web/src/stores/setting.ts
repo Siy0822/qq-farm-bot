@@ -82,6 +82,7 @@ export interface SettingsState {
   prioritize2x2Crops: boolean
   bagSeedPriority: number[]
   bagSeedFallbackStrategy: string
+  bagPriorityLandTypes: string[]
   autoAcceptFriendMinLevel: number
   intervals: IntervalsConfig
   friendQuietHours: FriendQuietHoursConfig
@@ -141,6 +142,7 @@ export const useSettingStore = defineStore('setting', () => {
     prioritize2x2Crops: false,
     bagSeedPriority: [],
     bagSeedFallbackStrategy: 'level',
+    bagPriorityLandTypes: ['purple', 'gold', 'black', 'red', 'normal'],
     autoAcceptFriendMinLevel: 0,
     intervals: {},
     friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
@@ -175,6 +177,7 @@ export const useSettingStore = defineStore('setting', () => {
       prioritize2x2Crops: false,
       bagSeedPriority: [],
       bagSeedFallbackStrategy: 'level',
+      bagPriorityLandTypes: ['purple', 'gold', 'black', 'red', 'normal'],
       autoAcceptFriendMinLevel: 0,
       intervals: {},
       friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
@@ -235,6 +238,9 @@ export const useSettingStore = defineStore('setting', () => {
         settings.value.goldenBugRoundLimit = d.goldenBugRoundLimit ?? 24
         settings.value.bagSeedPriority = d.bagSeedPriority ?? []
         settings.value.bagSeedFallbackStrategy = d.bagSeedFallbackStrategy ?? 'level'
+        settings.value.bagPriorityLandTypes = (d.bagPriorityLandTypes && d.bagPriorityLandTypes.length > 0)
+          ? d.bagPriorityLandTypes
+          : ['purple', 'gold', 'black', 'red', 'normal']
       }
     }
     finally {
@@ -254,6 +260,7 @@ export const useSettingStore = defineStore('setting', () => {
         prioritize2x2Crops: newSettings.prioritize2x2Crops === true,
         bagSeedPriority: newSettings.bagSeedPriority ?? [],
         bagSeedFallbackStrategy: newSettings.bagSeedFallbackStrategy ?? 'level',
+        bagPriorityLandTypes: newSettings.bagPriorityLandTypes ?? ['purple', 'gold', 'black', 'red', 'normal'],
         autoAcceptFriendMinLevel: newSettings.autoAcceptFriendMinLevel ?? 0,
         autoCodeRefresh: newSettings.autoCodeRefresh,
         intervals: newSettings.intervals,

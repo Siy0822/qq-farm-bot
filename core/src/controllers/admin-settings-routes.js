@@ -144,6 +144,10 @@ function buildSettingsPayload(store, accountId, currentUser) {
       accountId && typeof store.getBagSeedFallbackStrategy === "function"
         ? store.getBagSeedFallbackStrategy(accountId)
         : "level",
+    bagPriorityLandTypes:
+      accountId && typeof store.getBagPriorityLandTypes === "function"
+        ? store.getBagPriorityLandTypes(accountId)
+        : ["purple", "gold", "black", "red", "normal"],
     ui: store.getUI(),
     offlineReminder:
       store.getOfflineReminder && currentUser
