@@ -112,6 +112,10 @@ export interface QingmeiActivity {
   wineSellCommand?: number
   startTime?: number
   endTime?: number
+  claimStartTime?: number
+  claimEndTime?: number
+  claimWindowState?: 'open' | 'pending' | 'ended'
+  claimUnavailableReason?: string
   status?: number
   claimed: boolean
   claimable: boolean
@@ -399,6 +403,21 @@ export const useActivityStore = defineStore('activity', () => {
           ...data.qingmei,
           claimed: true,
           claimable: false,
+        }
+      }
+      // 领取窗口已关闭：服务端会回传最新活动数据，用它刷新面板并保持按钮禁用
+      else if (isCurrentAccount(requestedId) && !data.ok && data.claimWindowClosed) {
+        if (data.activity) {
+          heluActivity.value = data.activity
+        }
+        else if (data.qingmei && heluActivity.value) {
+          heluActivity.value.qingmei = data.qingmei
+        }
+        if (heluActivity.value?.qingmei) {
+          heluActivity.value.qingmei.claimable = false
+          heluActivity.value.qingmei.claimWindowState = data.claimWindowState || 'ended'
+          heluActivity.value.qingmei.claimUnavailableReason
+            = heluActivity.value.qingmei.claimUnavailableReason || data.error
         }
       }
       return data

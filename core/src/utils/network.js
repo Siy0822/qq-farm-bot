@@ -227,8 +227,6 @@ async function sendMsg(serviceName, methodName, bodyBytes, callback) {
 }
 
 /** Promise 版发送 */
-// opts.priority === 'high' 的请求（心跳、ACE 反作弊）拥有保留通道：
-// 即使普通请求把 pending 堆到上限也不会被拒绝，确保连接健康上报永不被 turbo 淹没。
 function sendMsgAsync(serviceName, methodName, bodyBytes, timeout = 20000, opts = {}) {
     const isHighPriority = !!(opts && opts.priority === 'high');
     return new Promise((resolve, reject) => {
@@ -655,7 +653,7 @@ let reconnectFailedReported = false;
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13)';
 
 // 注：Worker 内不再做自动重连（旧的指数退避重试是 bug 来源）。
-// 断线统一上报 reconnect_failed，由主进程的"应用宝离线重连"负责重启 Worker。
+// 断线统一上报 reconnect_failed，由主进程按账号登录方式重启 Worker。
 
 function closeCurrentWs({ terminate = false } = {}) {
     const current = ws;
@@ -670,8 +668,8 @@ function closeCurrentWs({ terminate = false } = {}) {
 
 /**
  * 断线后不再在 Worker 内进行自动重连（旧逻辑的指数退避重试是"自动重连 bug"的来源）。
- * 改为直接上报 reconnect_failed，交还给主进程的"应用宝离线重连"统一处理：
- * 由主进程按全局配置（延迟 N 分钟、重新获取 code）重启 Worker。
+ * 改为直接上报 reconnect_failed，交还给主进程按账号登录方式统一处理：
+ * QQ 账号由 NapCat 刷新 QQ Code 后立即重启；微信账号才使用应用宝重连配置。
  * Worker 重启后走 connect() 建立全新连接，无需自身重试。
  */
 function reportReconnectFailed(reason) {
@@ -679,7 +677,7 @@ function reportReconnectFailed(reason) {
     // 防止 close 与 heartbeat_timeout 同周期重复上报，导致主进程重复排重连
     if (reconnectFailedReported) return;
     reconnectFailedReported = true;
-    const message = `连接已断开，交由应用宝离线重连处理${reason ? ` (${reason})` : ''}`;
+    const message = `连接已断开，交由主进程按账号登录方式重连${reason ? ` (${reason})` : ''}`;
     logWarn('系统', `[WS] ${message}`);
     networkEvents.emit('reconnect_failed', {
         attempts: reconnectAttempts,

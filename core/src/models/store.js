@@ -566,7 +566,6 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
             } else if (key === 'fertilizer_smart_seconds') {
                 cfg.automation[key] = Math.max(60, Math.min(7200, Number(value) || 300));
             } else if (typeof value === 'string') {
-                // 字符串型自动化配置（如定时极速务农的 HH:mm）原样保留，避免被 !!value 强转成布尔
                 cfg.automation[key] = value;
             } else {
                 cfg.automation[key] = !!value;
@@ -1102,7 +1101,6 @@ function applyConfigSnapshot(patch = {}, opts = {}) {
             } else if (key === 'fertilizer_smart_seconds') {
                 cfg.automation[key] = Math.max(60, Math.min(7200, Number(value) || 300));
             } else if (typeof value === 'string') {
-                // 字符串型自动化配置（如定时极速务农的 HH:mm）原样保留，避免被 !!value 强转成布尔
                 cfg.automation[key] = value;
             } else {
                 cfg.automation[key] = !!value;
@@ -1596,7 +1594,9 @@ function addOrUpdateAccount(account) {
         accountId = String(id);
         data.accounts.push({
             id: accountId,
-            name: account.name || `账号${  id}`,
+            name: account.name === undefined || account.name === null
+                ? ''
+                : String(account.name).trim(),
             code: account.code || '',
             platform: account.platform || 'qq',
             loginType: account.loginType || 'manual',
@@ -1609,7 +1609,12 @@ function addOrUpdateAccount(account) {
             qq: account.qq ? String(account.qq) : (account.uin ? String(account.uin) : ''),
             gid: account.gid ? String(account.gid) : '',
             openId: nextOpenId ? String(nextOpenId) : '',
+            openid: account.openid ? String(account.openid) : '',
+            yybAccountId: account.yybAccountId ? String(account.yybAccountId) : '',
             avatar: nextAvatar || '',
+            avatarUrl: account.avatarUrl || nextAvatar || '',
+            avatar_url: account.avatar_url || nextAvatar || '',
+            nick: account.nick ? String(account.nick) : '',
             username: account.username || '',
             yybOpenid: account.yybOpenid ? String(account.yybOpenid) : '',
             createdAt: Date.now(),
@@ -1836,8 +1841,6 @@ const DEFAULT_WX_CONFIG = {
     appId: 'wx5306c5978fdb76e4',
     autoAddAccount: true,
     userIsolation: true,
-    // 【2026-08-12 修复】内置 YYB 自动重连默认为开（原 false 导致多数用户从未触发重连，
-    // 表现为"老是没重连"）。第三方 YYB 账号级默认本就是 true，二者对齐。
     autoReconnect: true,
     reconnectDelayMin: 5,
     reconnectMaxAttempts: 3

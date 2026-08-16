@@ -10,16 +10,26 @@ export interface DashboardTab {
 const props = defineProps<{
   tabs: DashboardTab[]
   activeTab: string
+  vertical?: boolean
+  collapsed?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:activeTab', key: string): void
+  (e: 'update:collapsed', value: boolean): void
 }>()
 
 const scrollContainer = ref<HTMLElement | null>(null)
 
+function toggleCollapsed() {
+  emit('update:collapsed', !props.collapsed)
+}
+
 function selectTab(key: string) {
   emit('update:activeTab', key)
+  // 竖列模式无需横向居中滚动
+  if (props.vertical)
+    return
   // 滚动到选中 tab 居中
   if (scrollContainer.value) {
     const container = scrollContainer.value
@@ -35,13 +45,26 @@ function selectTab(key: string) {
 </script>
 
 <template>
-  <div class="dashboard-tabs-wrapper">
+  <div class="dashboard-tabs-wrapper" :class="{ 'is-vertical': vertical, 'is-collapsed': vertical && collapsed }">
     <!-- 环境光晕 -->
     <div class="tabs-ambient" aria-hidden="true" />
 
+    <!-- 收起/展开 三条杠按钮 -->
+    <button
+      v-if="vertical"
+      class="collapse-btn"
+      :class="{ 'collapse-btn--active': !collapsed }"
+      :title="collapsed ? '展开' : '收起'"
+      @click="toggleCollapsed"
+    >
+      <span class="collapse-btn-icon i-carbon-menu" />
+    </button>
+
     <div
+      v-show="!vertical || !collapsed"
       ref="scrollContainer"
       class="dashboard-tabs"
+      :class="{ 'dashboard-tabs--vertical': vertical }"
     >
       <button
         v-for="tab in tabs"
@@ -151,6 +174,96 @@ function selectTab(key: string) {
   filter: drop-shadow(0 0 4px color-mix(in srgb, var(--theme-primary) 50%, transparent));
 }
 
+/* ============ 竖列模式 ============ */
+.is-vertical {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.is-vertical .tabs-ambient {
+  width: 100%;
+}
+
+/* 三条杠收起按钮 */
+.collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  background: var(--theme-glass);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border: 1px solid var(--theme-border);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--theme-primary) 6%, transparent);
+  color: color-mix(in srgb, var(--theme-text) 60%, transparent);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.collapse-btn:active {
+  transform: scale(0.92);
+}
+
+.collapse-btn:hover {
+  color: var(--theme-primary);
+}
+
+.collapse-btn--active {
+  color: var(--theme-primary);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--theme-primary) 14%, transparent);
+}
+
+.collapse-btn-icon {
+  font-size: 22px;
+}
+
+/* 竖列 tab 列表 */
+.dashboard-tabs--vertical {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  overflow-x: visible;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 16px;
+  width: auto;
+  min-width: 64px;
+}
+
+.dashboard-tabs--vertical .tab-item {
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 6px;
+  justify-content: center;
+}
+
+.dashboard-tabs--vertical .tab-icon {
+  font-size: 20px;
+}
+
+.dashboard-tabs--vertical .tab-label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* 收起态：只显示三条杠，隐藏 tab 列表 */
+.is-vertical.is-collapsed {
+  width: 40px;
+}
+
+.is-vertical.is-collapsed .tabs-ambient {
+  display: none;
+}
+
 /* 移动端适配 */
 @media (max-width: 480px) {
   .dashboard-tabs-wrapper {
@@ -174,6 +287,19 @@ function selectTab(key: string) {
 
   .tab-label {
     font-size: 12px;
+  }
+
+  .is-vertical {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .dashboard-tabs--vertical {
+    min-width: 56px;
+  }
+
+  .dashboard-tabs--vertical .tab-item {
+    padding: 9px 4px;
   }
 }
 

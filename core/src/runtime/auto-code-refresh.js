@@ -1,4 +1,5 @@
 const fetch = require('node-fetch');
+const { authorizeNapCatFarm } = require('../services/napcat-bridge-client');
 const { createScheduler } = require('../services/scheduler');
 
 function createAutoCodeRefreshService(deps) {
@@ -73,6 +74,47 @@ function createAutoCodeRefreshService(deps) {
     const account = findAccount(accountId);
     if (!account) return false;
 
+    const platform = String(account.platform || 'qq').toLowerCase();
+    if (platform === 'qq' && String(account.loginType || '') === 'napcat_open_auth') {
+      try {
+        const result = await authorizeNapCatFarm(String(account.uin || account.qq || '').trim());
+        const authorization = result.authorization || {};
+        const profile = result.profile || {};
+        if (!authorization.code) throw new Error('QQ 授权未返回农场 Code');
+        const boundOpenId = String(account.openID || account.openid || '').trim();
+        if (boundOpenId && authorization.openID && authorization.openID !== boundOpenId) {
+          throw new Error('QQ 快速登录账号与农场账号不匹配');
+        }
+        const nextAccount = {
+          ...account,
+          code: authorization.code,
+          openID: authorization.openID || boundOpenId,
+          openid: authorization.openID || boundOpenId,
+          uin: profile.uin || account.uin || '',
+          qq: profile.uin || account.qq || '',
+          avatar: profile.avatar || account.avatar || '',
+        };
+        addOrUpdateAccount(nextAccount);
+        const controls = typeof resolveWorkerControls === 'function' ? (resolveWorkerControls() || {}) : {};
+        if (typeof controls.restartWorker === 'function') controls.restartWorker(nextAccount);
+        addAccountLog('auto_code_refresh', `QQ Code 自动刷新成功，已重启账号: ${account.name || account.id}`,
+          account.id, account.name, { reason });
+        log('系统', `QQ Code 自动刷新成功: ${account.name || account.id}`, {
+          accountId: String(account.id),
+          accountName: account.name || '',
+        });
+        return true;
+      } catch (err) {
+        addAccountLog('auto_code_refresh_failed', `QQ Code 自动刷新失败: ${err.message}`,
+          account.id, account.name, { reason });
+        log('错误', `QQ Code 自动刷新失败: ${account.name || account.id} - ${err.message}`, {
+          accountId: String(account.id),
+          accountName: account.name || '',
+        });
+        return false;
+      }
+    }
+
     const wxConfig = getWxConfig();
     if (wxConfig.enabled === false) {
       log('系统', '自动刷新 Code 跳过: 微信登录未启用', {
@@ -115,8 +157,12 @@ function createAutoCodeRefreshService(deps) {
     if (!cfg.enabled) return;
 
     const account = findAccount(accountId);
-    if (!account || !String(account.wxid || '').trim()) {
-      log('系统', '自动刷新 Code 未启动: 账号缺少 wxid', {
+    const isNapCatQq = account
+      && String(account.platform || 'qq').toLowerCase() === 'qq'
+      && String(account.loginType || '') === 'napcat_open_auth'
+      && String(account.uin || account.qq || '').trim();
+    if (!account || (!isNapCatQq && !String(account.wxid || '').trim())) {
+      log('系统', '自动刷新 Code 未启动: 账号缺少可刷新身份', {
         accountId: String(accountId),
         accountName: account && account.name || '',
       });

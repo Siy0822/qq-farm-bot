@@ -1,5 +1,5 @@
 <script setup lang="ts">
-export type AdminTabKey = 'card' | 'user' | 'log' | 'system'
+export type AdminTabKey = 'account' | 'card' | 'user' | 'log' | 'system'
 
 export interface AdminTabItem {
   key: AdminTabKey

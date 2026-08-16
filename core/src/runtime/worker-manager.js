@@ -29,12 +29,9 @@ function createWorkerManager(deps) {
 
     const scheduler = createScheduler('worker_manager');
 
-    // 应用宝离线重连的独立计数（不受 startWorker 成功清零影响，否则 maxAttempts 会失效导致无限重连）
+    // 自动重连的独立计数（NapCat QQ 与应用宝账号共用上限保护）
     const reconnectAttemptsMap = new Map();
-    // 【2026-08-12 修复】重连成功后"稳定在线时长"：账号在线超过该时长未再断线，则清零重连计数。
-    // 原逻辑计数永不清零 → 断线 3 次（无论重连是否成功）后 currentAttempt>=maxAttempts → 永久放弃重连，
-    // 频繁被踢/网络不稳的账号表现为"老是没重连"。改为成功后稳定 10 分钟再清零：
-    // 既保留"防止无限重连"（10 分钟内反复断线仍累积计数受 maxAttempts 约束），又不会 3 次就永久放弃。
+    const reconnectScheduled = new Set();
     const RECONNECT_SUCCESS_STABLE_MS = 10 * 60 * 1000;
 
     /** 是否支持 Thread 模式（非 pkg 打包 + Worker 可用） */
@@ -50,27 +47,55 @@ function createWorkerManager(deps) {
         return `https://q1.qlogo.cn/g?b=qq&nk=${  value  }&s=100`;
     }
 
-    function resolveLoginProfile(status, worker) {
+    function resolveStoredAccount(accountId) {
+        try {
+            const store = require('../models/store');
+            const data = typeof store.getAccounts === 'function' ? store.getAccounts() : null;
+            const list = data && Array.isArray(data.accounts) ? data.accounts : [];
+            return list.find(item => String(item.id) === String(accountId)) || null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function isQqAvatarUrl(value) {
+        return /(^|\/\/)q\d*\.qlogo\.cn\//.test(cleanText(value));
+    }
+
+    function resolveLoginProfile(status, worker, opts = {}) {
         const data = status && typeof status === 'object' ? status : {};
         const info = data.status && typeof data.status === 'object' ? data.status : {};
         const platform = cleanText(info.platform || data.platform || worker.platform || 'qq').toLowerCase();
         const gid = cleanText(info.gid || data.gid);
         const openId = cleanText(info.openId || info.open_id || data.openId || data.open_id);
-        const avatar = cleanText(info.avatar || info.avatarUrl || info.avatar_url || data.avatar || data.avatarUrl || data.avatar_url);
+        const reported = cleanText(info.avatar || info.avatarUrl || info.avatar_url || data.avatar || data.avatarUrl || data.avatar_url);
         const qq = cleanText(info.qq || info.uin || data.qq || data.uin || worker.qq || worker.uin);
-        const fallbackAvatar = platform === 'qq' ? buildQqAvatarUrl(qq) : '';
+        // 应用宝（微信）账号的伪 UIN 也是纯数字，绝不能用它拼 QQ 头像，
+        // 否则会把已有的微信头像代理地址覆盖成 QQ 头像。
+        const isWxAccount = !!opts.isWxAccount || platform === 'wx';
+        const avatar = isWxAccount && isQqAvatarUrl(reported) ? '' : reported;
+        const fallbackAvatar = (!isWxAccount && platform === 'qq') ? buildQqAvatarUrl(qq) : '';
 
         return {
             platform,
             gid,
             openId,
             qq,
+            isWxAccount,
             avatar: avatar || fallbackAvatar
         };
     }
 
     function syncAccountProfile(accountId, msgData, worker) {
-        const profile = resolveLoginProfile(msgData, worker);
+        const stored = resolveStoredAccount(accountId);
+        const storedPlatform = cleanText(stored && stored.platform).toLowerCase();
+        const storedLoginType = cleanText(stored && stored.loginType).toLowerCase();
+        const workerLoginType = cleanText(worker && worker.loginType).toLowerCase();
+        const isWxAccount = storedPlatform === 'wx'
+            || cleanText(worker && worker.platform).toLowerCase() === 'wx'
+            || storedLoginType === 'yyb'
+            || workerLoginType === 'yyb';
+        const profile = resolveLoginProfile(msgData, worker, { isWxAccount });
         const update = { id: accountId };
 
         if (profile.openId && worker.openId !== profile.openId) {
@@ -83,7 +108,8 @@ function createWorkerManager(deps) {
             update.qq = profile.qq;
             update.uin = profile.qq;
         }
-        if (profile.avatar && worker.avatar !== profile.avatar) {
+        if (profile.avatar && worker.avatar !== profile.avatar
+            && !(profile.isWxAccount && isQqAvatarUrl(profile.avatar))) {
             update.avatar = profile.avatar;
         }
 
@@ -152,6 +178,43 @@ function createWorkerManager(deps) {
     function createWorker(account) {
         if (threadMode) return createThreadWorker(account);
         return createForkWorker(account);
+    }
+
+    async function refreshNapcatCodeIfNeeded(account) {
+        const isQqAccount = account
+            && String(account.platform || 'qq').toLowerCase() === 'qq';
+        if (!isQqAccount) return;
+
+        const uin = String(account.uin || account.qq || '').trim();
+        if (!uin) throw new Error('NapCat QQ 账号缺少 UIN，无法刷新 Code');
+
+        const { authorizeNapCatFarm } = require('../services/napcat-bridge-client');
+        const result = await authorizeNapCatFarm(uin);
+        const authorization = result.authorization || {};
+        const profile = result.profile || {};
+        if (!authorization.code) throw new Error('NapCat QQ 授权未返回农场 Code');
+
+        const boundOpenId = String(account.openID || account.openid || account.openId || '').trim();
+        if (boundOpenId && authorization.openID && authorization.openID !== boundOpenId) {
+            throw new Error('NapCat QQ 与目标农场账号不匹配');
+        }
+
+        Object.assign(account, {
+            code: authorization.code,
+            platform: 'qq',
+            loginType: 'napcat_open_auth',
+            openID: authorization.openID || boundOpenId,
+            openid: authorization.openID || boundOpenId,
+            openId: authorization.openID || boundOpenId,
+            uin: profile.uin || uin,
+            qq: profile.uin || uin,
+            avatar: profile.avatar || account.avatar || '',
+        });
+        addOrUpdateAccount(account);
+        log('系统', `账号 ${account.name || account.id} 已通过 NapCat 刷新 QQ Code`, {
+            accountId: String(account.id),
+            accountName: account.name || '',
+        });
     }
 
     /**
@@ -228,7 +291,7 @@ function createWorkerManager(deps) {
     /**
      * 启动账号 Worker
      */
-    async function startWorker(account) {
+    async function startWorker(account, options = {}) {
         if (!account || !account.id) return false;
         if (workers[account.id]) return false;
 
@@ -237,7 +300,25 @@ function createWorkerManager(deps) {
             accountName: account.name
         });
 
-        // 应用宝账号：启动前自动刷新 code
+        // 用户主动启动 QQ 时先通过 NapCat 获取新 Code，避免先拿旧 Code 连接失败
+        // 再进入离线重连。自动重连分支已经刷新过，使用 skipLoginRefresh 防止重复授权。
+        const platform = String(account.platform || 'qq').toLowerCase();
+        if (platform === 'qq' && options.skipLoginRefresh !== true) {
+            try {
+                await refreshNapcatCodeIfNeeded(account);
+            } catch (error) {
+                const errorMsg = error && error.message ? error.message : String(error || 'unknown error');
+                log('错误', `账号 ${account.name || account.id} NapCat 启动前刷新失败: ${errorMsg}`, {
+                    accountId: String(account.id),
+                    accountName: account.name || '',
+                });
+                addAccountLog('napcat_start_refresh_failed', `NapCat QQ 启动前刷新失败: ${errorMsg}`,
+                    account.id, account.name || '', { reason: errorMsg });
+                return false;
+            }
+        }
+
+        // 只有微信应用宝账号在启动前自动刷新 Code。
         await refreshYybCodeIfNeeded(account);
 
         let proc = null;
@@ -264,6 +345,7 @@ function createWorkerManager(deps) {
             name: account.name,
             username: account.username || '',
             platform: account.platform || 'qq',
+            loginType: account.loginType || '',
             gid: account.gid || '',
             openId: account.openId || account.open_id || '',
             qq: account.qq || account.uin || '',
@@ -353,7 +435,6 @@ function createWorkerManager(deps) {
 
         // 取消尚未触发的离线重连计划
         scheduler.clear(`reconnect_attempt_${accountId}`);
-        // 【2026-08-12】同步清理"重连成功稳定期清零"定时器，避免账号停止后残留定时器意外清零计数
         scheduler.clear(`reconnect_reset_${accountId}`);
         if (resetReconnect) {
             // 仅「账号退役 / 用户主动停止」场景清零计数；自动重连循环内不在此清零
@@ -429,11 +510,8 @@ function createWorkerManager(deps) {
     }
 
     /**
-     * 统一的应用宝离线重连调度
-     * 由 ws_reconnect_failed（连接中断）/ account_kicked（被踢下线）/ ws_error 400（登录失效/异地登录）
-     * 三种场景共用，避免某些场景“永不重连”。
-     * 受（账号级优先、全局兜底）autoReconnect + reconnectDelayMin + maxAttempts 控制；重连前由 startWorker →
-     * refreshYybCodeIfNeeded 自动刷新 code（内置 YYB 走 yyb-go；第三方 tab 接入时按 provider 分流）。
+     * 统一的离线重连调度。
+     * NapCat QQ 账号重新启动时只向 NapCat 获取 Code；只有 loginType=yyb 的微信账号才走应用宝。
      */
 
     /**
@@ -478,6 +556,16 @@ function createWorkerManager(deps) {
         const wrk = workers[accountId];
         const name = wrk ? wrk.name : accountId;
 
+        if (reconnectScheduled.has(accountId)) {
+            log('系统', `账号 ${name || accountId} 已在自动重连队列，忽略重复事件`, {
+                accountId: String(accountId),
+                accountName: name || '',
+                reason,
+            });
+            return;
+        }
+        reconnectScheduled.add(accountId);
+
         log('系统', `账号 ${name} 触发离线重连调度 (${reason})`, {
             accountId: String(accountId),
             accountName: name,
@@ -493,9 +581,64 @@ function createWorkerManager(deps) {
             // 取完整账号（含第三方真实 token 与账号级离线重连配置）
             const accountsData = store.getAccounts();
             const account = (accountsData.accounts || []).find(a => a.id === accountId);
+            if (!account) {
+                reconnectScheduled.delete(accountId);
+                log('系统', `账号 ${name} 已不存在，取消自动重连`);
+                return;
+            }
+
+            const isQqAccount = String(account.platform || 'qq').toLowerCase() === 'qq';
+            if (isQqAccount) {
+                const currentAttempt = reconnectAttemptsMap.get(accountId) || 0;
+                const maxAttempts = 3;
+                if (currentAttempt >= maxAttempts) {
+                    log('系统', `账号 ${name || accountId} NapCat 自动重连已达上限(${maxAttempts}次)，停止重连`);
+                    reconnectAttemptsMap.delete(accountId);
+                    reconnectScheduled.delete(accountId);
+                    return;
+                }
+                const nextAttempt = currentAttempt + 1;
+                reconnectAttemptsMap.set(accountId, nextAttempt);
+                log('系统', `QQ 账号 ${name || accountId} 将通过 NapCat 刷新 Code 并重连 (${nextAttempt}/${maxAttempts})`, {
+                    accountId: String(accountId),
+                    accountName: name || '',
+                    reason,
+                });
+                scheduler.setTimeoutTask(`reconnect_attempt_${accountId}`, 1000, async () => {
+                    reconnectScheduled.delete(accountId);
+                    const latest = (store.getAccounts().accounts || []).find(a => a.id === accountId);
+                    if (!latest || workers[accountId]) return;
+                    try {
+                        await refreshNapcatCodeIfNeeded(latest);
+                        const started = await startWorker(latest, { skipLoginRefresh: true });
+                        if (started) {
+                            addAccountLog('reconnect_success',
+                                `QQ 账号 ${name || accountId} 已通过 NapCat 恢复在线 (${nextAttempt}/${maxAttempts})`,
+                                accountId, name || '', { attempt: nextAttempt, maxAttempts, loginProvider: 'napcat' });
+                        }
+                    } catch (error) {
+                        const errorMsg = error && error.message ? error.message : String(error || 'unknown error');
+                        log('错误', `QQ 账号 ${name || accountId} NapCat 重连失败: ${errorMsg}`, {
+                            accountId: String(accountId),
+                            accountName: name || '',
+                        });
+                        addAccountLog('napcat_reconnect_failed', `NapCat QQ 重连失败: ${errorMsg}`,
+                            accountId, name || '', { reason: errorMsg, attempt: nextAttempt });
+                    }
+                });
+                return;
+            }
+
+            if (String(account.loginType || '') !== 'yyb' || String(account.platform || '').toLowerCase() !== 'wx') {
+                reconnectScheduled.delete(accountId);
+                log('系统', `账号 ${name || accountId} 不支持自动刷新 Code，已停止`);
+                return;
+            }
+
             const cfg = resolveReconnectConfig(account);
 
             if (!cfg.autoReconnect || !(cfg.reconnectDelayMin > 0)) {
+                reconnectScheduled.delete(accountId);
                 log('系统', `账号 ${name} 未启用应用宝离线重连，已停止`);
                 return;
             }
@@ -511,6 +654,7 @@ function createWorkerManager(deps) {
                     attempts: currentAttempt,
                 });
                 reconnectAttemptsMap.delete(accountId);
+                reconnectScheduled.delete(accountId);
                 return;
             }
 
@@ -527,6 +671,7 @@ function createWorkerManager(deps) {
             });
 
             scheduler.setTimeoutTask(attemptKey, delayMs, async () => {
+                reconnectScheduled.delete(accountId);
                 // 重连前检查账号是否还存在、是否已有 worker 在跑（无需重复重连）
                 const currentWrk = workers[accountId];
                 if (currentWrk) return;
@@ -542,13 +687,8 @@ function createWorkerManager(deps) {
                     log('系统', `账号 ${name} 开始自动重连 (${nextAttempt}/${cfg.reconnectMaxAttempts})`);
                     const started = await startWorker(account2);
                     if (started) {
-                        // 【2026-08-12 修复】重连成功后：若账号稳定在线 10 分钟未再断线，清零重连计数。
-                        // 原逻辑计数永不清零 → 断线 3 次后 currentAttempt>=maxAttempts 直接停止重连、账号永久离线。
-                        // 若 10 分钟内再次断线，计数保留继续累积，仍受 maxAttempts 限制，防止无限重连。
                         scheduler.setTimeoutTask(`reconnect_reset_${accountId}`, RECONNECT_SUCCESS_STABLE_MS, () => {
-                            if (workers[accountId]) {
-                                reconnectAttemptsMap.delete(accountId);
-                            }
+                            if (workers[accountId]) reconnectAttemptsMap.delete(accountId);
                         });
                         addAccountLog('reconnect_success',
                             `账号 ${name} 已通过应用宝离线重连恢复在线 (${nextAttempt}/${cfg.reconnectMaxAttempts})`,
@@ -559,6 +699,7 @@ function createWorkerManager(deps) {
                 }
             });
         } catch (e) {
+            reconnectScheduled.delete(accountId);
             log('系统', `账号 ${name} 自动重连逻辑异常: ${e.message}`);
         }
     }
@@ -726,7 +867,7 @@ function createWorkerManager(deps) {
                 offlineMs: 0
             });
             addAccountLog('ws_reconnect_failed',
-                `账号 ${  wrk.name  } 连接中断，交由应用宝离线重连处理`,
+                `账号 ${  wrk.name  } 连接中断，交由对应登录方式自动重连`,
                 accountId, wrk.name, { reason });
             scheduleReconnect(accountId, `ws_reconnect_failed:${  reason}`);
         } else if (msg.type === 'automation_patch') {

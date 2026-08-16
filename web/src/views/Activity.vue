@@ -124,7 +124,7 @@ const sectionTabs = computed<ActivitySection[]>(() => [
   { key: 'journey', label: L.journeyTab, icon: 'i-carbon-observation', count: guanxingActivity.value?.summary?.claimableCount || 0 },
   { key: 'notes', label: L.notesTab, icon: 'i-carbon-notebook', count: solarTerms.value?.claimableCount || 0 },
   ...(SHOW_QINGMEI_ACTIVITY
-    ? [{ key: 'qingmei' as const, label: '青酿换万金', icon: 'i-carbon-fruit-bowl', count: qingmeiActivity.value?.claimable ? 1 : 0 }]
+    ? [{ key: 'qingmei' as const, label: '青梅酿万金', icon: 'i-carbon-fruit-bowl', count: qingmeiActivity.value?.claimable ? 1 : 0 }]
     : []),
 ])
 const activeError = computed(() => heluError.value || (activeSection.value === 'journey' ? guanxingError.value : ''))

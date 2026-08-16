@@ -296,6 +296,7 @@ function createDataProvider(deps) {
             data.accounts.forEach(acc => {
                 const worker = workers[acc.id];
                 acc.running = !!worker;
+                acc.connected = !!(worker && worker.status && worker.status.connection && worker.status.connection.connected);
                 if (worker && worker.status && worker.status.status && worker.status.status.name) {
                     acc.nick = worker.status.status.name;
                 }

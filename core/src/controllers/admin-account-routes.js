@@ -33,22 +33,21 @@ function registerAdminAccountRoutes({
   getAccessibleAccountIdsFromRequest,
   userStore,
   sendProviderError,
+  requireAdminRole,
 }) {
   app.get("/api/accounts", (req, res) => {
     try {
       const currentUser = req.currentUser;
       let data;
       if (currentUser) {
+        // 账号按用户名隔离：管理员也只看自己名下账号，全量账号改由后台 /api/admin/all-accounts 提供
         const accounts = provider.getAccounts();
-        data =
-          currentUser.role === "admin" || currentUser.role === "super_admin"
-            ? accounts
-            : {
-                ...accounts,
-                accounts: accounts.accounts.filter(
-                  (account) => account.username === currentUser.username,
-                ),
-              };
+        data = {
+          ...accounts,
+          accounts: accounts.accounts.filter(
+            (account) => account.username === currentUser.username,
+          ),
+        };
       } else {
         data = { accounts: [], nextId: 1 };
       }
@@ -69,6 +68,35 @@ function registerAdminAccountRoutes({
       res.status(500).json({ ok: false, error: error.message });
     }
   });
+
+  app.get(
+    "/api/admin/all-accounts",
+    requireAdminRole,
+    (req, res) => {
+      try {
+        const accounts = provider.getAccounts();
+        let data = {
+          ...accounts,
+          accounts: Array.isArray(accounts.accounts) ? accounts.accounts : [],
+        };
+        // 脱敏：第三方应用宝配置的 apiToken 不外泄到前端
+        if (Array.isArray(data.accounts)) {
+          data = {
+            ...data,
+            accounts: data.accounts.map((a) => {
+              if (a && a.thirdparty && a.thirdparty.apiToken) {
+                return { ...a, thirdparty: { ...a.thirdparty, apiToken: "***" } };
+              }
+              return a;
+            }),
+          };
+        }
+        res.json({ ok: true, data });
+      } catch (error) {
+        res.status(500).json({ ok: false, error: error.message });
+      }
+    },
+  );
 
   app.post("/api/accounts/refresh-wx-codes", async (req, res) => {
     try {
@@ -167,8 +195,17 @@ function registerAdminAccountRoutes({
 
   app.post("/api/accounts", (req, res) => {
     try {
-      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const body = req.body && typeof req.body === "object" ? { ...req.body } : {};
       const currentUser = req.currentUser;
+      const incomingYybOpenid = String(body.yybOpenid || "").trim();
+      const duplicateYybAccount = !body.id && incomingYybOpenid
+        ? getAccountsForUser(currentUser && currentUser.username).find((account) =>
+            String(account.platform || "").toLowerCase() === "wx"
+            && String(account.loginType || "") === "yyb"
+            && String(account.yybOpenid || "").trim() === incomingYybOpenid,
+          )
+        : null;
+      if (duplicateYybAccount) body.id = String(duplicateYybAccount.id);
       const isUpdate = !!body.id;
       const isAdmin =
         currentUser &&
@@ -224,7 +261,7 @@ function registerAdminAccountRoutes({
         const name = nextAccount.name || "";
         provider.addAccountLog(
           isUpdate ? "update" : "add",
-          (isUpdate ? "更新账号: " : "添加账号: ") + (name || accountId),
+          (isUpdate ? (duplicateYybAccount ? "重新扫码更新账号: " : "更新账号: ") : "添加账号: ") + (name || accountId),
           accountId,
           name,
         );

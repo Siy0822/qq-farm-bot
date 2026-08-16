@@ -102,6 +102,8 @@ function avatarSource(acc?: Account | null) {
     : cleanText(acc.avatar)
   if (explicit)
     return explicit
+  if (cleanText(acc.platform).toLowerCase() === 'wx')
+    return ''
   const qq = cleanText(acc.uin || acc.qq)
   if (qq && /^\d+$/.test(qq))
     return `https://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100`

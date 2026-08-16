@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import api from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import AccountSettingsTab from '@/components/settings/AccountSettingsTab.vue'
@@ -10,17 +10,24 @@ import { useUserSettings } from '@/composables/settings/useUserSettings'
 import { useSettingStore } from '@/stores/setting'
 import { useAutomationSettings } from '@/composables/settings/useAutomationSettings'
 import { useStrategySettings } from '@/composables/settings/useStrategySettings'
+import { useUserStore } from '@/stores/user'
 import AdminPanel from '@/views/AdminPanel.vue'
 
 const settingStore = useSettingStore()
+const userStore = useUserStore()
+const isAdmin = computed(() => userStore.isAdmin)
 
 type SettingsTabKey = 'account' | 'default-plan' | 'user' | 'admin'
 
 function getInitialSettingsTab(): SettingsTabKey {
   const saved = localStorage.getItem('settings-active-tab')
-  return saved === 'default-plan' || saved === 'user' || saved === 'admin'
-    ? saved
-    : 'account'
+  const allowed = saved === 'default-plan' || saved === 'user' || saved === 'admin'
+  if (!allowed)
+    return 'account'
+  // 普通用户无权进入后台，即使本地缓存了 admin tab 也回退到账号管理
+  if (saved === 'admin' && !isAdmin.value)
+    return 'account'
+  return saved
 }
 
 const activeTab = ref<SettingsTabKey>(getInitialSettingsTab())
@@ -38,11 +45,13 @@ watch(activeTab, (newTab) => {
 })
 
 const tabs = [
-  { key: 'account', label: '账号管理', icon: 'i-carbon-user-settings' },
-  { key: 'default-plan', label: '默认方案', icon: 'i-carbon-settings-adjust' },
-  { key: 'user', label: '用户管理', icon: 'i-carbon-user' },
-  { key: 'admin', label: '后台', icon: 'i-carbon-settings-adjust' },
+  { key: 'account', label: '账号管理', icon: 'i-carbon-user-settings', adminOnly: false },
+  { key: 'default-plan', label: '默认方案', icon: 'i-carbon-settings-adjust', adminOnly: false },
+  { key: 'user', label: '用户管理', icon: 'i-carbon-user', adminOnly: false },
+  { key: 'admin', label: '后台', icon: 'i-carbon-settings-adjust', adminOnly: true },
 ] as const
+
+const visibleTabs = computed(() => tabs.filter(tab => !tab.adminOnly || isAdmin.value))
 
 const modalVisible = ref(false)
 const defaultPlanApplyingId = ref('')
@@ -197,7 +206,7 @@ onMounted(async () => {
       <div class="glass-tabnav">
         <nav ref="settingsTabsNav" class="flex gap-1 overflow-x-auto p-2">
           <button
-            v-for="tab in tabs"
+            v-for="tab in visibleTabs"
             :key="tab.key"
             :data-settings-tab="tab.key"
             class="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-all max-sm:gap-1 max-sm:px-2.5 max-sm:py-1 max-sm:text-xs"
@@ -291,7 +300,7 @@ onMounted(async () => {
           @save-offline="handleSaveOffline"
         />
 
-        <AdminPanel v-else-if="activeTab === 'admin'" />
+        <AdminPanel v-else-if="activeTab === 'admin' && isAdmin" />
       </div>
     </div>
 

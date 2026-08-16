@@ -90,7 +90,6 @@ const QINGMEI_SEED_ITEM_ID = 21221;
 const QINGMEI_FRUIT_ITEM_ID = 41221;
 const QINGMEI_SEED_REWARD_COUNT = 24;
 const QINGMEI_FINE_BREW_STEPS = 3;
-// 抄自 liyangpengs：每日领种子请求里的 grant_id（对应旧代码的 type=2）
 const QINGMEI_DAILY_GRANT_ID = 3;
 const HELU_PASSPORT_UID = 'SAIJI_PASSPORT';
 const HELU_TITLE = '荷风十里蝉初鸣';
@@ -272,6 +271,79 @@ function normalizeQingmeiClaimResult(result) {
     items,
     claimedCount: seed?.itemCount || 0,
   };
+}
+
+/**
+ * 解析青梅“领种子”窗口。
+ *
+ * 服务端的领取子活动 2026081201 只给 start_time/end_time（不带 status/enabled），
+ * 且比主活动 2026081200 早结束（例：领取到 8/15 23:59:59，酿造到 8/16 23:59:59）。
+ * 之前只看 status!==3 && enabled!==false，窗口关闭后面板依然显示“可领”，
+ * 点了就撞服务端 code=1034001 活动未开始。
+ */
+function resolveQingmeiClaimWindow(claim, root) {
+  const startTime = toNum(claim?.start_time ?? claim?.startTime)
+    || toNum(root?.start_time ?? root?.startTime);
+  const endTime = toNum(claim?.end_time ?? claim?.endTime);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  if (startTime > 0 && nowSeconds < startTime) {
+    return {
+      startTime,
+      endTime,
+      open: false,
+      state: 'pending',
+      reason: `青梅种子领取尚未开始（开始时间 ${formatActivityTime(startTime)}）`,
+    };
+  }
+  if (endTime > 0 && nowSeconds > endTime) {
+    return {
+      startTime,
+      endTime,
+      open: false,
+      state: 'ended',
+      reason: `青梅种子领取已于 ${formatActivityTime(endTime)} 结束`,
+    };
+  }
+  return {
+    startTime,
+    endTime,
+    open: true,
+    state: 'open',
+    reason: '',
+  };
+}
+
+function formatActivityTime(seconds) {
+  const value = toNum(seconds);
+  if (value <= 0) return '未知时间';
+  const date = new Date(value * 1000);
+  const pad = num => String(num).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} `
+    + `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function createQingmeiClaimClosedError(window) {
+  const err = new Error(`领取青梅种子失败: ${window?.reason || '当前不在领取时间内'}`);
+  err.qingmeiClaimClosed = true;
+  err.qingmeiClaimWindowState = window?.state || 'ended';
+  return err;
+}
+
+function isQingmeiActivityNotStartedError(err) {
+  const message = String(err?.message || err || '');
+  return message.includes('1034001') || message.includes('活动未开始');
+}
+
+/** 日志用：把服务端原始 reply 转成短字符串，方便事后定位失败原因 */
+function safeJsonPreview(value, maxLength = 400) {
+  if (value === undefined || value === null) return String(value);
+  try {
+    return JSON.stringify(value, (_key, val) =>
+      (typeof val === 'bigint' ? String(val) : val)).slice(0, maxLength);
+  } catch {
+    return String(value).slice(0, maxLength);
+  }
 }
 
 function isAlreadyClaimedError(err) {
@@ -1093,18 +1165,23 @@ async function getQingmeiWineMaterialItems() {
     }));
 }
 
-function normalizeQingmeiActivity(reply) {
+function normalizeQingmeiActivity(reply, claimOverride = null) {
   const activities = flattenActivityChildren(reply);
   const root = reply?.group?.activity || activities.find(item => toNum(item?.id) === QINGMEI_ACTIVITY_ID) || {};
-  const claim = activities.find(item => toNum(item?.id) === QINGMEI_SEED_CLAIM_ACTIVITY_ID) || {};
+  const claim = claimOverride
+    || activities.find(item => toNum(item?.id) === QINGMEI_SEED_CLAIM_ACTIVITY_ID)
+    || {};
   const wine = activities.find(item => toNum(item?.id) === QINGMEI_WINE_ACTIVITY_ID) || {};
   const status = toNum(claim?.status);
   const claimedToday = isQingmeiClaimedToday();
   const materialInfo = getItemById(QINGMEI_FRUIT_ITEM_ID);
+  // 领种子子活动（2026081201）不返回 status/enabled，且它的结束时间比主活动早：
+  // 只能靠 start_time/end_time 判断领取窗口是否还开着，否则面板会一直显示“可领”。
+  const claimWindow = resolveQingmeiClaimWindow(claim, root);
 
   return {
     uid: reply?.__activityUid || QINGMEI_ACTIVITY_UID,
-    title: '青酿换万金',
+    title: '青梅酿万金',
     activityId: toNum(root?.id) || QINGMEI_ACTIVITY_ID,
     claimActivityId: toNum(claim?.id) || QINGMEI_SEED_CLAIM_ACTIVITY_ID,
     claimCommand: QINGMEI_SEED_CLAIM_CMD,
@@ -1115,9 +1192,13 @@ function normalizeQingmeiActivity(reply) {
     wineSellCommand: QINGMEI_WINE_SELL_CMD,
     startTime: toNum(root?.start_time ?? root?.startTime ?? claim?.start_time ?? claim?.startTime),
     endTime: toNum(root?.end_time ?? root?.endTime ?? claim?.end_time ?? claim?.endTime),
+    claimStartTime: claimWindow.startTime,
+    claimEndTime: claimWindow.endTime,
+    claimWindowState: claimWindow.state,
+    claimUnavailableReason: claimWindow.reason,
     status,
     claimed: claimedToday || status === 3,
-    claimable: !claimedToday && status !== 3 && claim?.enabled !== false,
+    claimable: claimWindow.open && !claimedToday && status !== 3 && claim?.enabled !== false,
     reward: {
       itemId: QINGMEI_SEED_ITEM_ID,
       itemCount: QINGMEI_SEED_REWARD_COUNT,
@@ -1134,17 +1215,49 @@ function normalizeQingmeiActivity(reply) {
   };
 }
 
+/**
+ * 单独拉一次领种子子活动（2026081201）。
+ *
+ * 领取窗口结束后，服务端会把这个子活动从主活动 children 里摔掉，
+ * 只看主活动会拿不到 end_time，于是又误判为“可领”。这里直接按 ID 再查一次。
+ */
+async function fetchQingmeiClaimActivity() {
+  try {
+    const reply = await getActivityGroupWithUidFallback(
+      QINGMEI_SEED_CLAIM_ACTIVITY_ID,
+      [QINGMEI_ACTIVITY_UID, '']
+    );
+    const activities = flattenActivityChildren(reply);
+    return activities.find(item => toNum(item?.id) === QINGMEI_SEED_CLAIM_ACTIVITY_ID)
+      || reply?.group?.activity
+      || null;
+  } catch (err) {
+    activityLogger.warn('查询青梅领种子子活动失败', {
+      event: 'qingmei_claim_activity_fetch_failed',
+      activityId: QINGMEI_SEED_CLAIM_ACTIVITY_ID,
+      error: err?.message || String(err),
+    });
+    return null;
+  }
+}
+
 async function getQingmeiActivity() {
   try {
     const reply = await getActivityGroupWithUidFallback(QINGMEI_ACTIVITY_ID, [QINGMEI_ACTIVITY_UID, '']);
-    const activity = normalizeQingmeiActivity(reply);
+    let claimActivity = flattenActivityChildren(reply)
+      .find(item => toNum(item?.id) === QINGMEI_SEED_CLAIM_ACTIVITY_ID) || null;
+    // 主活动没带领种子子活动（窗口已关的典型表现）时，补一次单独查询拿时间窗
+    if (!claimActivity || !toNum(claimActivity?.end_time ?? claimActivity?.endTime)) {
+      claimActivity = (await fetchQingmeiClaimActivity()) || claimActivity;
+    }
+    const activity = normalizeQingmeiActivity(reply, claimActivity);
     activity.material.itemCount = await getBagItemCount(QINGMEI_FRUIT_ITEM_ID);
     return activity;
   } catch (err) {
     const materialInfo = getItemById(QINGMEI_FRUIT_ITEM_ID);
     return {
       uid: QINGMEI_ACTIVITY_UID,
-      title: '青酿换万金',
+      title: '青梅酿万金',
       activityId: QINGMEI_ACTIVITY_ID,
       claimActivityId: QINGMEI_SEED_CLAIM_ACTIVITY_ID,
       claimCommand: QINGMEI_SEED_CLAIM_CMD,
@@ -1173,6 +1286,23 @@ async function getQingmeiActivity() {
 }
 
 async function claimQingmeiSeeds() {
+  // 先看服务端的领取窗口：窗口已关就不要再发 Operate（避开 code=1034001）。
+  const activityBefore = await getQingmeiActivity();
+  if (activityBefore?.claimWindowState && activityBefore.claimWindowState !== 'open') {
+    activityLogger.warn('跳过领取青梅种子', {
+      event: 'qingmei_seed_claim_skipped',
+      activityId: QINGMEI_SEED_CLAIM_ACTIVITY_ID,
+      claimWindowState: activityBefore.claimWindowState,
+      claimStartTime: activityBefore.claimStartTime,
+      claimEndTime: activityBefore.claimEndTime,
+      reason: activityBefore.claimUnavailableReason,
+    });
+    throw createQingmeiClaimClosedError({
+      state: activityBefore.claimWindowState,
+      reason: activityBefore.claimUnavailableReason,
+    });
+  }
+
   const beforeCount = await getBagItemCount(QINGMEI_SEED_ITEM_ID);
   let reply = null;
   try {
@@ -1191,6 +1321,23 @@ async function claimQingmeiSeeds() {
         qingmei: await getQingmeiActivity(),
       };
     }
+    activityLogger.error('领取青梅种子失败', {
+      event: 'qingmei_seed_claim_failed',
+      stage: 'operate',
+      activityId: QINGMEI_SEED_CLAIM_ACTIVITY_ID,
+      cmd: QINGMEI_SEED_CLAIM_CMD,
+      grantId: QINGMEI_DAILY_GRANT_ID,
+      claimWindowState: activityBefore?.claimWindowState,
+      claimEndTime: activityBefore?.claimEndTime,
+      error: err?.message || String(err),
+    });
+    if (isQingmeiActivityNotStartedError(err)) {
+      throw createQingmeiClaimClosedError({
+        state: activityBefore?.claimWindowState || 'ended',
+        reason: activityBefore?.claimUnavailableReason
+          || '服务端返回“活动未开始”，领取窗口已关闭或未到时间',
+      });
+    }
     throw err;
   }
 
@@ -1199,6 +1346,19 @@ async function claimQingmeiSeeds() {
   const afterCount = await getBagItemCount(QINGMEI_SEED_ITEM_ID);
   const claimedCount = claimResult.claimedCount || Math.max(0, afterCount - beforeCount);
   if (claimedCount <= 0) {
+    activityLogger.error('领取青梅种子失败', {
+      event: 'qingmei_seed_claim_failed',
+      stage: 'verify',
+      activityId: QINGMEI_SEED_CLAIM_ACTIVITY_ID,
+      cmd: QINGMEI_SEED_CLAIM_CMD,
+      grantId: QINGMEI_DAILY_GRANT_ID,
+      beforeCount,
+      afterCount,
+      claimWindowState: activityBefore?.claimWindowState,
+      claimEndTime: activityBefore?.claimEndTime,
+      rewardItems: claimResult.items,
+      rawClaimReply: safeJsonPreview(reply?.qingmei_claim),
+    });
     throw new Error('领取青梅种子失败: 服务端未返回奖励，背包数量也未增加');
   }
   if (claimedCount > 0) markQingmeiClaimedToday();

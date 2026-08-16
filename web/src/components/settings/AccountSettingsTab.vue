@@ -46,6 +46,8 @@ function accountAvatar(acc: any) {
   const direct = String(acc?.avatar || acc?.avatarUrl || acc?.avatar_url || '').trim()
   if (direct)
     return direct
+  if (String(acc?.platform || '').toLowerCase() === 'wx')
+    return ''
   const qq = String(acc?.uin || acc?.qq || '').trim()
   if (/^\d+$/.test(qq))
     return `https://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100`

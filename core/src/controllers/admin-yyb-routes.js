@@ -84,6 +84,45 @@ async function callYybApi(apiBase, path, apiKey, init = {}) {
 }
 
 function registerAdminYybRoutes({ app, requireAdminToken, sendProviderError }) {
+  // 微信头像保存在 YYB 服务中。img 请求无法携带管理端鉴权头，
+  // 因此由面板按 openid 代理图片，不回退到 QQ 头像。
+  app.get("/api/yyb/accounts/avatar", async (req, res) => {
+    try {
+      const ref = String(req.query.ref || "").trim();
+      if (!ref) return res.status(400).send("ref is required");
+      const { apiBase, apiKey } = resolveYybCreds();
+      const base = normalizeApiBase(apiBase);
+      if (!base) return res.status(503).send("应用宝接口地址未配置");
+      const candidates = [
+        {
+          url: `${base}/accounts/avatar?ref=${encodeURIComponent(ref)}`,
+          headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+        },
+        // 兼容旧版宿主机 YYB Go：旧账号头像仍保存在 8000 服务中。
+        {
+          url: `http://172.18.0.1:8000/accounts/avatar?ref=${encodeURIComponent(ref)}`,
+          headers: {},
+        },
+      ];
+      let response = null;
+      for (const candidate of candidates) {
+        response = await fetch(candidate.url, { headers: candidate.headers });
+        if (response.ok) break;
+      }
+      if (!response || !response.ok) {
+        return res.status(response ? response.status : 404).send(
+          response ? await response.text() : "no avatar",
+        );
+      }
+      res.setHeader("Content-Type", response.headers.get("content-type") || "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=300");
+      const bytes = Buffer.from(await response.arrayBuffer());
+      res.send(bytes);
+    } catch (error) {
+      res.status(500).send(`YYB 微信头像失败: ${error.message}`);
+    }
+  });
+
   // 拉应用宝账号列表
   app.post("/api/yyb/accounts", requireAdminToken, async (req, res) => {
     const { apiBase, apiKey } = resolveYybCreds(req.body);

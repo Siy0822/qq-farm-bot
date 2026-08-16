@@ -17,6 +17,27 @@ defineEmits<{
 
 const materialCount = computed(() => Number(props.activity?.material?.itemCount || 0))
 
+const claimWindowClosed = computed(() => {
+  const state = props.activity?.claimWindowState
+  return state === 'ended' || state === 'pending'
+})
+
+const claimButtonText = computed(() => {
+  if (props.activity?.claimWindowState === 'ended')
+    return '领取已结束'
+  if (props.activity?.claimWindowState === 'pending')
+    return '未开始'
+  return props.activity?.claimed ? '今日已领取' : `领取 ${props.activity?.reward?.itemCount || 24} 个`
+})
+
+const claimWindowText = computed(() => {
+  const start = props.activity?.claimStartTime
+  const end = props.activity?.claimEndTime
+  if (!start && !end)
+    return ''
+  return `领取时间 ${formatTime(start)} — ${formatTime(end)}`
+})
+
 function formatTime(value?: number) {
   if (!value)
     return '-'
@@ -31,7 +52,7 @@ function formatTime(value?: number) {
         <div class="i-carbon-fruit-bowl text-3xl" />
         <div>
           <h2 class="text-lg font-bold">
-            {{ activity?.title || '青酿换万金' }}
+            {{ activity?.title || '青梅酿万金' }}
           </h2>
           <p class="mt-0.5 text-sm text-white/85">
             每日领取青梅种子，种植青梅参与限时酿造活动
@@ -64,6 +85,14 @@ function formatTime(value?: number) {
             <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
               {{ formatTime(activity?.startTime) }} — {{ formatTime(activity?.endTime) }}
             </div>
+            <div v-if="claimWindowText" class="mt-1 text-xs"
+              :class="claimWindowClosed ? 'text-amber-600 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'"
+            >
+              {{ claimWindowText }}
+            </div>
+            <div v-if="activity?.claimUnavailableReason" class="mt-1 text-xs text-amber-600 dark:text-amber-300">
+              {{ activity.claimUnavailableReason }}
+            </div>
           </div>
         </div>
 
@@ -71,10 +100,10 @@ function formatTime(value?: number) {
           class="min-w-32"
           variant="primary"
           :loading="loading"
-          :disabled="loading || activity?.claimed"
+          :disabled="loading || activity?.claimed || claimWindowClosed"
           @click="$emit('claim')"
         >
-          {{ activity?.claimed ? '今日已领取' : '领取 24 个' }}
+          {{ claimButtonText }}
         </BaseButton>
       </div>
 

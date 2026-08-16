@@ -4,7 +4,6 @@ import { useRoute } from 'vue-router'
 import api from '@/api'
 import LoginModals from '@/components/login/LoginModals.vue'
 import PasswordStrengthMeter from '@/components/login/PasswordStrengthMeter.vue'
-import UpdateLogModal from '@/components/login/UpdateLogModal.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import { getPasswordStrength } from '@/composables/usePasswordStrength'
@@ -18,7 +17,6 @@ const appStore = useAppStore()
 const route = useRoute()
 const gameVersion = ref('')
 const loginLinks = computed(() => appStore.loginPageConfig)
-const showUpdateLog = ref(false)
 const logoLoadFailed = ref(false)
 
 const isLogin = ref(true)
@@ -458,38 +456,8 @@ async function fetchGameVersion() {
 
 <template>
   <div class="login-container">
-    <!-- ===== 动画背景装饰层 ===== -->
-    <div class="bg-decoration" aria-hidden="true">
-      <!-- 天空渐变 -->
-      <div class="sky-gradient" />
-      
-      <!-- 太阳（脉动发光） -->
-      <div class="sun-decoration">
-        <div class="sun-core" />
-        <div class="sun-glow-1" />
-        <div class="sun-glow-2" />
-      </div>
-      
-      <!-- 漂浮云朵 -->
-      <div class="cloud cloud-1" />
-      <div class="cloud cloud-2" />
-      <div class="cloud cloud-3" />
-      
-      <!-- 漂浮粒子（晨光中的尘埃） -->
-      <div class="particle particle-1" />
-      <div class="particle particle-2" />
-      <div class="particle particle-3" />
-      <div class="particle particle-4" />
-      <div class="particle particle-5" />
-      <div class="particle particle-6" />
-      
-    </div>
-
-    <!-- ===== 登录卡片（带入场动画） ===== -->
+    <!-- ===== 登录卡片 ===== -->
     <main class="login-card">
-      <!-- 卡片顶部装饰光晕 -->
-      <div class="card-glow" />
-      
       <!-- Logo 区域（带呼吸光环） -->
       <div class="logo-area">
         <div class="logo-icon-wrapper">
@@ -672,14 +640,6 @@ async function fetchGameVersion() {
             <span class="i-carbon-logo-qq" />
             加入QQ群
           </a>
-          <button
-            type="button"
-            class="footer-link update-log-link"
-            @click="showUpdateLog = true"
-          >
-            <span class="i-carbon-document" />
-            更新日志
-          </button>
         </div>
         <div v-if="gameVersion" class="game-version">
           当前游戏版本：{{ gameVersion }}
@@ -714,11 +674,8 @@ async function fetchGameVersion() {
       @submit-reset-password="submitResetPassword"
       @submit-renewal="submitRenewal"
     />
-
-    <UpdateLogModal :show="showUpdateLog" @close="showUpdateLog = false" />
   </div>
 </template>
-
 <style scoped>
 /* =============================================
    登录页 — 田园农场主题 · 增强版
@@ -730,7 +687,9 @@ async function fetchGameVersion() {
   width: 100%;
   display: flex;
   flex-direction: column;
-  background: transparent;
+  align-items: center;
+  justify-content: center;
+  background: #0f172a;
   font-family:
     'Noto Sans SC',
     -apple-system,
@@ -743,164 +702,8 @@ async function fetchGameVersion() {
   padding: 24px;
 }
 
-@keyframes bg-shift {
-  0% { background: linear-gradient(180deg, #070b1f 0%, #141a40 36%, #2a2350 60%, #4b3a6b 80%, #7d5a7e 100%); }
-  100% { background: linear-gradient(180deg, #0a0f2c 0%, #1a2150 36%, #322a60 60%, #574a82 80%, #8a6589 100%); }
-}
-
-/* --- 背景装饰层（固定钉满视口，滚动始终铺满，不再透出深色底） --- */
-.bg-decoration {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-  z-index: 0;
-  background: linear-gradient(180deg, #0b1020 0%, #141a40 36%, #2a2350 60%, #4b3a6b 80%, #7d5a7e 100%);
-  animation: bg-shift 20s ease-in-out infinite alternate;
-}
-
-/* 天空渐变 */
-.sky-gradient {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 72%;
-  background:
-    radial-gradient(1.5px 1.5px at 18% 28%, rgba(255,255,255,0.85) 0, transparent 100%),
-    radial-gradient(1px 1px at 42% 18%, rgba(255,255,255,0.55) 0, transparent 100%),
-    radial-gradient(1.5px 1.5px at 68% 34%, rgba(255,255,255,0.7) 0, transparent 100%),
-    radial-gradient(1px 1px at 84% 22%, rgba(255,255,255,0.5) 0, transparent 100%),
-    radial-gradient(1px 1px at 56% 46%, rgba(255,255,255,0.45) 0, transparent 100%),
-    radial-gradient(1.5px 1.5px at 30% 52%, rgba(255,255,255,0.6) 0, transparent 100%),
-    linear-gradient(180deg, rgba(7,11,31,0) 0%, rgba(20,26,64,0) 100%);
-}
-
-/* --- 太阳（三层光晕 + 脉动） --- */
-.sun-decoration {
-  position: absolute;
-  top: 7%;
-  right: 12%;
-  width: 90px;
-  height: 90px;
-}
-
-.sun-core {
-  position: absolute;
-  inset: 22px;
-  border-radius: 50%;
-  background: radial-gradient(circle, #fdfdfb 0%, #e8eef7 55%, rgba(232,238,247,0) 100%);
-  box-shadow: 0 0 26px 6px rgba(210,225,255,0.35);
-  animation: sun-pulse 6s ease-in-out infinite;
-}
-
-.sun-glow-1 {
-  position: absolute;
-  inset: 4px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(200,220,255,0.25) 0%, transparent 70%);
-  animation: sun-glow-soft 8s ease-in-out infinite alternate;
-}
-
-.sun-glow-2 {
-  position: absolute;
-  inset: -6px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(200,220,255,0.10) 0%, transparent 60%);
-  animation: sun-glow-soft 10s ease-in-out infinite alternate-reverse;
-}
-
-@keyframes sun-pulse {
-  0%, 100% { transform: scale(1); opacity: 0.9; }
-  50% { transform: scale(1.12); opacity: 1; }
-}
-
-@keyframes sun-glow-soft {
-  0% { opacity: 0.7; transform: scale(1); }
-  100% { opacity: 1; transform: scale(1.3); }
-}
-
-/* --- 漂浮云朵 --- */
-.cloud {
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 0 6px 1px rgba(255,255,255,0.5);
-  filter: blur(0.3px);
-}
-
-.cloud::before,
-.cloud::after {
-  content: '';
-  position: absolute;
-  border-radius: 50%;
-  background: inherit;
-  box-shadow: inherit;
-}
-
-.cloud-1 {
-  width: 3px;
-  height: 3px;
-  top: 18%;
-  left: 30%;
-  animation: star-twinkle 3.5s ease-in-out infinite;
-}
-.cloud-1::before { width: 2px; height: 2px; top: 10px; left: 14px; }
-.cloud-1::after { width: 2px; height: 2px; top: 24px; left: -8px; }
-
-.cloud-2 {
-  width: 2px;
-  height: 2px;
-  top: 28%;
-  left: 56%;
-  animation: star-twinkle 4.5s ease-in-out infinite;
-  animation-delay: -1.5s;
-}
-.cloud-2::before { width: 2px; height: 2px; top: 14px; left: 10px; }
-.cloud-2::after { width: 3px; height: 3px; top: -10px; left: 18px; }
-
-.cloud-3 {
-  width: 2px;
-  height: 2px;
-  top: 12%;
-  left: 72%;
-  animation: star-twinkle 5s ease-in-out infinite;
-  animation-delay: -3s;
-  opacity: 0.8;
-}
-.cloud-3::before { width: 3px; height: 3px; top: 18px; left: -10px; }
-.cloud-3::after { width: 2px; height: 2px; top: -8px; left: 12px; }
-
-@keyframes star-twinkle {
-  0%, 100% { opacity: 0.3; transform: scale(0.8); }
-  50% { opacity: 1; transform: scale(1.25); }
-}
-
-/* --- 漂浮粒子（晨光尘埃） --- */
-.particle {
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(255, 240, 150, 0.85);
-  box-shadow: 0 0 6px 1px rgba(255, 230, 130, 0.6);
-  filter: blur(0.5px);
-}
-
-.particle-1 { width: 6px; height: 6px; top: 20%; left: 20%; animation: float-up 12s ease-in-out infinite; }
-.particle-2 { width: 4px; height: 4px; top: 30%; left: 70%; animation: float-up 15s ease-in-out infinite reverse; animation-delay: -3s; }
-.particle-3 { width: 5px; height: 5px; top: 15%; left: 45%; animation: float-up 10s ease-in-out infinite; animation-delay: -6s; }
-.particle-4 { width: 3px; height: 3px; top: 45%; left: 25%; animation: float-up 18s ease-in-out infinite reverse; animation-delay: -8s; }
-.particle-5 { width: 7px; height: 7px; top: 25%; left: 85%; animation: float-up 14s ease-in-out infinite; animation-delay: -4s; }
-.particle-6 { width: 4px; height: 4px; top: 35%; left: 10%; animation: float-up 11s ease-in-out infinite reverse; animation-delay: -10s; }
-
-@keyframes float-up {
-  0%, 100% { transform: translateY(0) translateX(0) scale(1); opacity: 0.3; }
-  25% { transform: translateY(-30px) translateX(10px) scale(1.2); opacity: 0.7; }
-  50% { transform: translateY(-50px) translateX(-5px) scale(0.9); opacity: 0.5; }
-  75% { transform: translateY(-20px) translateX(15px) scale(1.1); opacity: 0.8; }
-}
-
 /* =============================================
-   登录卡片 — 增强毛玻璃 + 入场动画
+   登录卡片 — 实色面板
    ============================================= */
 
 .login-card {
@@ -909,10 +712,10 @@ async function fetchGameVersion() {
   margin: 0 auto;
   padding: 34px 30px 22px;
   line-height: 1.35;
-  background: transparent;
-  border: none;
-  border-radius: 24px;
-  box-shadow: none;
+  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
   position: relative;
   z-index: 10;
   animation: card-enter 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -922,25 +725,6 @@ async function fetchGameVersion() {
 @keyframes card-enter {
   0% { opacity: 0; transform: translateY(40px) scale(0.96); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* 卡片顶部装饰光晕 */
-.card-glow {
-  position: absolute;
-  top: -80px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 280px;
-  height: 160px;
-  background: radial-gradient(ellipse, color-mix(in srgb, #818cf8 24%, transparent) 0%, transparent 70%);
-  pointer-events: none;
-  opacity: 0.6;
-  animation: glow-breathe 5s ease-in-out infinite alternate;
-}
-
-@keyframes glow-breathe {
-  0% { opacity: 0.4; transform: translateX(-50%) scaleY(0.9); }
-  100% { opacity: 0.8; transform: translateX(-50%) scaleY(1.2); }
 }
 
 /* --- Logo 区域 --- */
@@ -1090,28 +874,26 @@ async function fetchGameVersion() {
 
 .login-card :deep(.base-input) {
   min-height: 42px;
-  border-color: rgba(255, 255, 255, 0.22);
-  border-radius: 12px;
-  background: var(--theme-glass);
+  border-color: rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: #1e293b;
   color: #e2e8f0;
   padding: 8px 12px 8px 36px;
   font-size: 0.85rem;
   transition: all 0.25s ease;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
 }
 
 .login-card :deep(.base-input:focus) {
-  border-color: #818cf8;
-  background: rgba(255, 255, 255, 0.14);
+  border-color: #4ade80;
+  background: #1e293b;
   box-shadow:
-    0 0 0 3px rgba(129, 140, 248, 0.25),
+    0 0 0 3px rgba(74, 222, 128, 0.18),
     0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .login-card :deep(.base-input:hover:not(:focus)) {
   border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.12);
+  background: #243248;
 }
 
 .form-hint {
@@ -1179,21 +961,17 @@ async function fetchGameVersion() {
   100% { opacity: 0; transform: translateY(-6px) scale(0.96); max-height: 0; padding: 0; margin: 0; }
 }
 
-/* --- 提交按钮（带微光效） --- */
+/* --- 提交按钮（实色硬朗） --- */
 .submit-btn {
   margin-top: 4px;
   height: 46px;
-  background: var(--theme-glass) !important;
-  backdrop-filter: blur(14px) !important;
-  -webkit-backdrop-filter: blur(14px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.28) !important;
-  color: #e2e8f0 !important;
+  background: #22c55e !important;
+  border: none !important;
+  color: #052e16 !important;
   font-size: 0.95rem;
   font-weight: 700;
-  border-radius: 14px;
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.22),
-    0 2px 4px rgba(0, 0, 0, 0.10) !important;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.35) !important;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   letter-spacing: 0.06em;
   position: relative;
@@ -1204,7 +982,7 @@ async function fetchGameVersion() {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%);
   transform: translateX(-100%);
   transition: transform 0.6s ease;
   pointer-events: none;
@@ -1215,16 +993,14 @@ async function fetchGameVersion() {
 }
 
 .submit-btn:hover:not(:disabled) {
-  transform: translateY(-3px);
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.28) !important,
-    0 4px 8px rgba(0, 0, 0, 0.12) !important;
+  transform: translateY(-2px);
+  background: #16a34a !important;
+  box-shadow: 0 8px 24px rgba(34, 197, 94, 0.45) !important;
 }
 
 .submit-btn:active:not(:disabled) {
   transform: translateY(-1px) scale(0.99);
-  box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.20) !important;
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3) !important;
 }
 
 .submit-text {
@@ -1249,28 +1025,27 @@ async function fetchGameVersion() {
 }
 
 .switch-btn {
-  background: var(--theme-glass);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   color: #cbd5e1;
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   padding: 11px 20px;
-  border-radius: 12px;
+  border-radius: 8px;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  backdrop-filter: blur(16px);
 }
 
 .switch-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(129, 140, 248, 0.5);
+  background: #243248;
+  border-color: #4ade80;
   color: #a5b4fc;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .switch-btn:active {
@@ -1293,9 +1068,9 @@ async function fetchGameVersion() {
 
 .quick-action-btn {
   flex: 1;
-  background: var(--theme-glass);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 12px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
   color: #cbd5e1;
   cursor: pointer;
   font-size: 0.82rem;
@@ -1306,15 +1081,14 @@ async function fetchGameVersion() {
   align-items: center;
   justify-content: center;
   gap: 5px;
-  backdrop-filter: blur(16px);
 }
 
 .quick-action-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(129, 140, 248, 0.4);
+  background: #243248;
+  border-color: #4ade80;
   color: #a5b4fc;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 /* --- 底部链接 --- */
@@ -1372,16 +1146,6 @@ async function fetchGameVersion() {
   background: rgba(56, 189, 248, 0.26);
 }
 
-.update-log-link {
-  color: #fde68a;
-  background: rgba(250, 204, 21, 0.16);
-  border-color: rgba(250, 204, 21, 0.32);
-}
-.update-log-link:hover {
-  color: #fef08a;
-  background: rgba(250, 204, 21, 0.26);
-}
-
 .game-version {
   display: flex;
   justify-content: center;
@@ -1389,22 +1153,20 @@ async function fetchGameVersion() {
   margin: 8px auto 0;
   font-size: 0.7rem;
   color: #e2e8f0;
-  background: var(--theme-glass);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
   padding: 4px 14px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   white-space: nowrap;
 }
 
-/* --- 免费领取按钮（带闪烁星星） --- */
+/* --- 免费领取按钮 --- */
 .claim-card-btn {
   width: 100%;
   padding: 10px 16px;
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.22), rgba(16, 185, 129, 0.22));
-  border: 1px solid rgba(34, 197, 94, 0.4);
-  border-radius: 12px;
+  background: #14532d;
+  border: 1px solid #22c55e;
+  border-radius: 8px;
   color: #86efac;
   font-size: 0.85rem;
   font-weight: 600;
@@ -1418,7 +1180,7 @@ async function fetchGameVersion() {
 
 .claim-card-btn:hover:not(:disabled) {
   border-color: #86efac;
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.34), rgba(16, 185, 129, 0.34));
+  background: #166534;
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(34, 197, 94, 0.25);
 }
@@ -1447,7 +1209,7 @@ async function fetchGameVersion() {
 
   .login-card {
     padding: 24px 18px 18px;
-    border-radius: 18px;
+    border-radius: 10px;
   }
 
   .logo-icon {
@@ -1458,14 +1220,6 @@ async function fetchGameVersion() {
   .logo-title {
     font-size: 1.2rem;
   }
-
-  .cloud-3 {
-    display: none;
-  }
-
-  .particle {
-    opacity: 0.15;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1473,12 +1227,6 @@ async function fetchGameVersion() {
   .submit-btn,
   .switch-btn,
   .quick-action-btn,
-  .cloud,
-  .particle,
-  .sun-core,
-  .sun-glow-1,
-  .sun-glow-2,
-  .card-glow,
   .logo-ring-1,
   .logo-ring-2,
   .sparkle-icon {

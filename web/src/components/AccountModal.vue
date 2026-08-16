@@ -35,9 +35,16 @@ interface CaptureFlowState {
   }
 }
 
-const activeTab = ref<'capture' | 'manual' | 'yyb' | 'yybqr' | 'yyb3rd'>('manual')
+const activeTab = ref<'qq' | 'capture' | 'manual' | 'yyb' | 'yybqr' | 'yyb3rd'>('manual')
 const loading = ref(false)
 const errorMessage = ref('')
+const qqAccountName = ref('')
+const qqStatus = ref<'idle' | 'checking' | 'success' | 'error'>('idle')
+const qqStatusMessage = ref('')
+const qqErrorMessage = ref('')
+const qqQrCode = ref('')
+const qqQrLoading = ref(false)
+const qqWaitingForScan = ref(false)
 const captureEnabled = ref(false)
 const captureLoading = ref(false)
 const captureChecking = ref(false)
@@ -105,6 +112,86 @@ const captureNextStep = computed(() => {
     return `即将自动${props.editData ? '更新' : '添加'}账号，好友 GID 将在后台同步`
   return `即将自动${props.editData ? '更新' : '添加'}账号`
 })
+
+const { pause: stopQqCheck, resume: startQqCheck } = useIntervalFn(async () => {
+  if (!qqWaitingForScan.value || activeTab.value !== 'qq' || loading.value)
+    return
+  try {
+    const { data } = await api.get('/api/qr/napcat-login')
+    if (data?.data?.loggedIn) {
+      stopQqCheck()
+      qqWaitingForScan.value = false
+      qqQrCode.value = ''
+      await authorizeViaNapCat()
+    }
+  }
+  catch {
+    // 扫码等待期间保持轮询；显式刷新时会展示错误。
+  }
+}, 2000, { immediate: false })
+
+async function loadNapCatQRCode(forceRefresh = false) {
+  qqQrLoading.value = true
+  qqErrorMessage.value = ''
+  try {
+    const { data } = forceRefresh
+      ? await api.post('/api/qr/napcat-refresh', {})
+      : await api.get('/api/qr/napcat-login')
+    const result = data?.data || {}
+    if (result.loggedIn) {
+      qqWaitingForScan.value = false
+      qqQrCode.value = ''
+      stopQqCheck()
+      qqStatus.value = 'success'
+      qqStatusMessage.value = 'QQ 已登录，正在获取农场授权。'
+      await authorizeViaNapCat()
+      return
+    }
+    if (!result.qrcode)
+      throw new Error('未获取到 QQ 二维码')
+    qqQrCode.value = result.qrcode
+    qqWaitingForScan.value = true
+    qqStatus.value = 'idle'
+    qqStatusMessage.value = '请使用手机 QQ 扫码并确认，成功后会自动添加农场账号。'
+    startQqCheck()
+  }
+  catch (e: any) {
+    qqStatus.value = 'error'
+    qqErrorMessage.value = e.response?.data?.error || e.message || '获取 QQ 二维码失败'
+  }
+  finally {
+    qqQrLoading.value = false
+  }
+}
+
+async function authorizeViaNapCat() {
+  if (loading.value)
+    return
+  loading.value = true
+  qqStatus.value = 'checking'
+  qqStatusMessage.value = '正在获取 QQ 农场授权并保存账号...'
+  qqErrorMessage.value = ''
+  try {
+    const name = qqAccountName.value.trim()
+    const { data } = await api.post('/api/qr/napcat-farm-code', {
+      accountId: props.editData?.id || '',
+      ...(name ? { name } : {}),
+    }, { timeout: 100000 })
+    if (!data?.ok)
+      throw new Error(data?.error || 'QQ 农场授权失败')
+    qqStatus.value = 'success'
+    qqStatusMessage.value = props.editData ? 'QQ 农场账号已更新' : 'QQ 农场账号已添加'
+    emit('saved')
+    close()
+  }
+  catch (e: any) {
+    qqStatus.value = 'error'
+    qqErrorMessage.value = e.response?.data?.error || e.message || 'QQ 农场授权失败'
+  }
+  finally {
+    loading.value = false
+  }
+}
 
 const { pause: stopCaptureCheck, resume: startCaptureCheck } = useIntervalFn(async () => {
   if (activeTab.value !== 'capture' || !captureFlow.value || captureCompleting.value || captureChecking.value)
@@ -177,8 +264,9 @@ async function completeCaptureAccount() {
   captureCompleting.value = true
   captureError.value = ''
   try {
+    const name = captureAccountName.value.trim()
     const { data } = await api.post(`/api/capture/sessions/${captureFlow.value.id}/complete`, {
-      name: captureAccountName.value.trim(),
+      ...(name ? { name } : {}),
     }, { timeout: 35000 })
     if (!data?.ok)
       throw new Error(data?.error || (props.editData ? '更新账号失败' : '添加账号失败'))
@@ -285,12 +373,14 @@ async function submitManual() {
       && form.platform === (props.editData.platform || 'qq')
 
     if (onlyNameChanged) {
-      payload = { id: props.editData.id, name: form.name }
+      const name = form.name.trim()
+      payload = { id: props.editData.id, ...(name ? { name } : {}) }
     }
     else {
+      const name = form.name.trim()
       payload = {
         id: props.editData.id,
-        name: form.name,
+        ...(name ? { name } : {}),
         code,
         platform: form.platform,
         loginType: 'manual',
@@ -298,8 +388,9 @@ async function submitManual() {
     }
   }
   else {
+    const name = form.name.trim()
     payload = {
-      name: form.name,
+      ...(name ? { name } : {}),
       code,
       platform: form.platform,
       loginType: 'manual',
@@ -310,6 +401,8 @@ async function submitManual() {
 }
 
 function close() {
+  stopQqCheck()
+  qqWaitingForScan.value = false
   stopCaptureCheck()
   void cancelCaptureSession()
   resetYybQr()
@@ -319,6 +412,14 @@ function close() {
 
 watch(() => props.show, (newVal) => {
   if (newVal) {
+    qqAccountName.value = props.editData?.name || ''
+    yybAccountName.value = props.editData?.name || ''
+    qqStatus.value = 'idle'
+    qqStatusMessage.value = ''
+    qqErrorMessage.value = ''
+    qqQrCode.value = ''
+    qqWaitingForScan.value = false
+    stopQqCheck()
     errorMessage.value = ''
     captureError.value = ''
     captureCopiedField.value = ''
@@ -332,7 +433,10 @@ watch(() => props.show, (newVal) => {
       void loadYybConfig()
     if (props.editData) {
       if (props.editData.provider === 'thirdparty') {
-        activeTab.value = 'yyb3rd'
+        activeTab.value = 'manual'
+        form.name = props.editData.name || ''
+        form.code = props.editData.code || ''
+        form.platform = props.editData.platform || 'wx'
         yyb3rdApiBase.value = props.editData.thirdparty?.apiBase || ''
         yyb3rdOpenid.value = props.editData.thirdparty?.openid || ''
         yyb3rdApiToken.value = '' // 不明文回显，留空表示不修改
@@ -365,12 +469,21 @@ watch(() => props.show, (newVal) => {
     }
   }
   else {
+    stopQqCheck()
+    qqWaitingForScan.value = false
     stopCaptureCheck()
     void cancelCaptureSession()
   }
 })
 
 watch(activeTab, (tab) => {
+  if (tab !== 'qq') {
+    stopQqCheck()
+    qqWaitingForScan.value = false
+  }
+  else {
+    void loadNapCatQRCode()
+  }
   if (tab !== 'capture')
     void cancelCaptureSession()
   if (tab === 'yyb' || tab === 'yybqr')
@@ -411,11 +524,12 @@ async function submitYyb3rdLogin() {
     // 新建，或编辑且修改了 APITOKEN → 需重新向第三方换取 code；
     // 编辑且未改 APITOKEN → 直接沿用原 code
     if (!isEdit || tokenOk) {
+      const name = yyb3rdAccountName.value.trim()
       const { data } = await api.post('/api/yyb/thirdparty-code', {
         apiBase: yyb3rdApiBase.value.trim(),
         apiToken: yyb3rdApiToken.value.trim(),
         openid: yyb3rdOpenid.value.trim(),
-        name: yyb3rdAccountName.value.trim(),
+        ...(name ? { name } : {}),
       })
       if (!data?.ok || !data?.data?.code) {
         yyb3rdError.value = data?.error || '获取登录 code 失败'
@@ -423,7 +537,7 @@ async function submitYyb3rdLogin() {
       }
       code = data.data.code
     }
-    const name = yyb3rdAccountName.value.trim() || `第三方应用宝${yyb3rdOpenid.value.trim().slice(-4)}`
+    const name = yyb3rdAccountName.value.trim()
     const thirdparty = {
       apiBase: yyb3rdApiBase.value.trim(),
       apiToken: yyb3rdApiToken.value.trim(),
@@ -435,7 +549,7 @@ async function submitYyb3rdLogin() {
     const payload = isEdit
       ? {
           id: props.editData.id,
-          name,
+          ...(name ? { name } : {}),
           code,
           platform: 'wx',
           loginType: 'yyb',
@@ -444,7 +558,7 @@ async function submitYyb3rdLogin() {
           thirdparty,
         }
       : {
-          name,
+          ...(name ? { name } : {}),
           code,
           platform: 'wx',
           loginType: 'yyb',
@@ -478,7 +592,7 @@ const yybAutoReconnect = ref(false)
 const yybReconnectDelayMin = ref(5)
 const yybReconnectMaxAttempts = ref(3)
 
-const yybConfigured = computed(() => !!yybApiBase.value && !!yybApiKey.value)
+const yybConfigured = computed(() => !!yybApiBase.value)
 
 // 已配置视图里展示/编辑当前应用宝接口配置（token 由后端部署时自动预填）
 const yybShowConfigEditor = ref(false)
@@ -589,13 +703,24 @@ async function submitYybLogin() {
       return
     }
     const selected = yybAccounts.value.find(a => a.openid === yybSelectedOpenid.value)
-    const name = yybAccountName.value.trim() || selected?.nickname || selected?.alias || `应用宝账号${Date.now()}`
+    const legacyUin = selected?.uin ? String(selected.uin) : ''
+    const name = yybAccountName.value.trim()
     await addAccount({
-      name,
+      ...(name ? { name } : {}),
       code: data.data.code,
       platform: 'wx',
       loginType: 'yyb',
       yybOpenid: yybSelectedOpenid.value,
+      // 兼容旧版账号字段；账号管理仍按旧逻辑显示 uin。
+      wxid: yybSelectedOpenid.value,
+      openid: yybSelectedOpenid.value,
+      yybAccountId: selected?.id ? String(selected.id) : '',
+      uin: legacyUin,
+      qq: legacyUin,
+      nick: selected?.nickname || selected?.alias || name,
+      avatar: `/api/yyb/accounts/avatar?ref=${encodeURIComponent(yybSelectedOpenid.value)}`,
+      avatarUrl: `/api/yyb/accounts/avatar?ref=${encodeURIComponent(yybSelectedOpenid.value)}`,
+      avatar_url: `/api/yyb/accounts/avatar?ref=${encodeURIComponent(yybSelectedOpenid.value)}`,
     })
   } catch (e: any) {
     yybError.value = e?.response?.data?.error || e?.message || '应用宝登录失败'
@@ -693,14 +818,60 @@ async function confirmYybQr() {
       apiKey: yybApiKey.value.trim(),
       sessionId: yybQrSessionId.value,
     })
-    if (data?.ok) {
-      yybQrStatus.value = 'success'
-      // 刷新账号列表
-      await fetchYybAccounts()
-    } else {
+    if (!data?.ok) {
       yybQrError.value = data?.error || '确认授权失败'
       yybQrStatus.value = 'error'
+      return
     }
+    // 扫码确认成功后，用返回的 openid 换取 code 并自动添加账号登录到农场
+    const confirmedOpenid = data.data?.openid || ''
+    if (confirmedOpenid) {
+      const codeRes = await api.post('/api/yyb/getcode', {
+        apiBase: yybApiBase.value.trim(),
+        apiKey: yybApiKey.value.trim(),
+        openid: confirmedOpenid,
+      })
+      if (codeRes.data?.ok && codeRes.data?.data?.code) {
+        // confirm 响应不保证携带 UIN；再从账号列表按 OpenID 获取完整旧版字段。
+        let confirmedAccount = data.data || {}
+        try {
+          const accountsRes = await api.post('/api/yyb/accounts', {
+            apiBase: yybApiBase.value.trim(),
+            apiKey: yybApiKey.value.trim(),
+          })
+          const accounts = Array.isArray(accountsRes.data?.data) ? accountsRes.data.data : []
+          confirmedAccount = accounts.find((account: any) => account.openid === confirmedOpenid) || confirmedAccount
+        }
+        catch {}
+        const legacyUin = confirmedAccount.uin ? String(confirmedAccount.uin) : ''
+        const confirmedNickname = confirmedAccount.nickname || confirmedAccount.alias || ''
+        const name = yybAccountName.value.trim()
+        await addAccount({
+          ...(name ? { name } : {}),
+          code: codeRes.data.data.code,
+          platform: 'wx',
+          loginType: 'yyb',
+          yybOpenid: confirmedOpenid,
+          // 兼容旧版账号字段；账号管理仍按旧逻辑显示 uin。
+          wxid: confirmedOpenid,
+          openid: confirmedOpenid,
+          yybAccountId: confirmedAccount.id ? String(confirmedAccount.id) : '',
+          uin: legacyUin,
+          qq: legacyUin,
+          nick: confirmedNickname || name,
+          avatar: `/api/yyb/accounts/avatar?ref=${encodeURIComponent(confirmedOpenid)}`,
+          avatarUrl: `/api/yyb/accounts/avatar?ref=${encodeURIComponent(confirmedOpenid)}`,
+          avatar_url: `/api/yyb/accounts/avatar?ref=${encodeURIComponent(confirmedOpenid)}`,
+        })
+        return
+      }
+      yybQrError.value = codeRes.data?.error || '获取登录 code 失败'
+      yybQrStatus.value = 'error'
+      return
+    }
+    yybQrStatus.value = 'success'
+    // 刷新账号列表
+    await fetchYybAccounts()
   } catch (e: any) {
     yybQrError.value = e?.response?.data?.error || e?.message || '确认授权失败'
     yybQrStatus.value = 'error'
@@ -743,6 +914,17 @@ function resetYybQr() {
         <div class="mb-4 flex border-b" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 10%, transparent)' }">
           <button
             class="flex-1 py-2 text-center text-sm font-medium transition-colors"
+            :class="activeTab === 'qq' ? 'border-b-2' : 'opacity-60'"
+            :style="{
+              color: activeTab === 'qq' ? 'var(--theme-primary)' : 'var(--theme-text)',
+              borderColor: 'var(--theme-primary)',
+            }"
+            @click="activeTab = 'qq'"
+          >
+            QQ扫码
+          </button>
+          <button
+            class="flex-1 py-2 text-center text-sm font-medium transition-colors"
             :class="activeTab === 'manual' ? 'border-b-2' : 'opacity-60'"
             :style="{
               color: activeTab === 'manual' ? 'var(--theme-primary)' : 'var(--theme-text)',
@@ -753,29 +935,6 @@ function resetYybQr() {
             手动填码
           </button>
           <button
-            v-if="captureEnabled"
-            class="flex-1 py-2 text-center text-sm font-medium transition-colors"
-            :class="activeTab === 'capture' ? 'border-b-2' : 'opacity-60'"
-            :style="{
-              color: activeTab === 'capture' ? 'var(--theme-primary)' : 'var(--theme-text)',
-              borderColor: 'var(--theme-primary)',
-            }"
-            @click="activeTab = 'capture'"
-          >
-            抓包登录
-          </button>
-          <button
-            class="flex-1 py-2 text-center text-sm font-medium transition-colors"
-            :class="activeTab === 'yyb' ? 'border-b-2' : 'opacity-60'"
-            :style="{
-              color: activeTab === 'yyb' ? 'var(--theme-primary)' : 'var(--theme-text)',
-              borderColor: 'var(--theme-primary)',
-            }"
-            @click="activeTab = 'yyb'"
-          >
-            应用宝
-          </button>
-          <button
             class="flex-1 py-2 text-center text-sm font-medium transition-colors"
             :class="activeTab === 'yybqr' ? 'border-b-2' : 'opacity-60'"
             :style="{
@@ -784,19 +943,43 @@ function resetYybQr() {
             }"
             @click="activeTab = 'yybqr'"
           >
-            应用宝扫码
+            微信扫码
           </button>
-          <button
-            class="flex-1 py-2 text-center text-sm font-medium transition-colors"
-            :class="activeTab === 'yyb3rd' ? 'border-b-2' : 'opacity-60'"
-            :style="{
-              color: activeTab === 'yyb3rd' ? 'var(--theme-primary)' : 'var(--theme-text)',
-              borderColor: 'var(--theme-primary)',
-            }"
-            @click="activeTab = 'yyb3rd'"
-          >
-            第三方YYB
-          </button>
+        </div>
+
+        <div v-if="activeTab === 'qq'" class="space-y-4">
+          <BaseInput
+            v-model="qqAccountName"
+            label="账号备注（可选）"
+            placeholder="留空则保持空备注"
+          />
+
+          <div v-if="qqErrorMessage" class="rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-300">
+            {{ qqErrorMessage }}
+          </div>
+
+          <div class="flex flex-col items-center gap-4 py-4">
+            <div v-if="qqQrLoading" class="h-48 w-48 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
+              <span class="i-carbon-circle-dash animate-spin text-3xl" :style="{ color: 'var(--theme-primary)' }" />
+            </div>
+            <img v-else-if="qqQrCode" :src="qqQrCode" class="h-48 w-48 rounded-lg" alt="QQ扫码登录">
+            <div v-else class="h-48 w-48 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
+              <span class="i-carbon-logo-qq text-5xl" :style="{ color: 'var(--theme-primary)' }" />
+            </div>
+
+            <p class="text-center text-sm leading-6" :class="qqStatus === 'error' ? 'text-red-500' : 'opacity-70'" :style="{ color: qqStatus === 'error' ? undefined : 'var(--theme-text)' }">
+              {{ qqStatusMessage || '使用手机 QQ 扫码并确认，即可获取 QQ 农场授权。' }}
+            </p>
+
+            <div class="flex flex-wrap justify-center gap-2">
+              <BaseButton variant="secondary" size="sm" :loading="qqQrLoading" @click="loadNapCatQRCode(true)">
+                刷新二维码
+              </BaseButton>
+              <BaseButton v-if="qqStatus === 'success' && !qqWaitingForScan" variant="primary" size="sm" :loading="loading" @click="authorizeViaNapCat">
+                添加农场账号
+              </BaseButton>
+            </div>
+          </div>
         </div>
 
         <div v-if="activeTab === 'capture'" class="space-y-4">
@@ -1133,9 +1316,9 @@ function resetYybQr() {
               </div>
             </div>
 
-            <!-- 引导到"应用宝扫码"tab 添加新账号 -->
+            <!-- 引导到"微信扫码"tab 添加新账号 -->
             <div class="rounded-lg border p-3 text-sm" :style="{ borderColor: 'color-mix(in srgb, var(--theme-primary) 25%, transparent)', background: 'color-mix(in srgb, var(--theme-primary) 6%, transparent)', color: 'var(--theme-text)' }">
-              需要添加新账号？请切换到「应用宝扫码」标签页，使用应用宝扫码授权登录。
+              需要添加新账号？请切换到「微信扫码」标签页，使用微信扫码授权登录。
             </div>
 
             <BaseInput
@@ -1207,17 +1390,17 @@ function resetYybQr() {
           </div>
         </div>
 
-        <!-- 应用宝扫码（与"应用宝"tab 平级）：扫码添加新账号到应用宝 -->
+        <!-- 微信扫码（与"手动填码"tab 平级）：扫码添加新账号 -->
         <div v-if="activeTab === 'yybqr'" class="space-y-4">
           <div v-if="!yybConfigured" class="rounded-lg border p-4 text-sm" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 15%, transparent)', color: 'var(--theme-text)' }">
-            请先在「应用宝」标签页配置接口地址与 API Token，再回到此处扫码登录。
+            微信扫码功能暂未就绪，请稍后再试或联系管理员。
           </div>
 
           <template v-else>
             <!-- 未开始扫码：显示触发按钮 -->
             <div v-if="yybQrStatus === 'idle'" class="flex flex-col items-center gap-3 py-4">
               <p class="text-sm opacity-70 text-center" :style="{ color: 'var(--theme-text)' }">
-                点击下方按钮生成应用宝二维码，使用应用宝扫码授权即可添加新账号。
+                点击下方按钮生成微信二维码，使用微信扫码授权即可添加新账号。
               </p>
               <BaseButton variant="primary" :loading="yybQrLoading" @click="startYybQrLogin">
                 开始扫码
@@ -1228,7 +1411,7 @@ function resetYybQr() {
             <div v-else class="rounded-lg border p-4 space-y-3" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 15%, transparent)' }">
               <div class="flex items-center justify-between">
                 <span class="text-sm font-medium" :style="{ color: 'var(--theme-text)' }">
-                  应用宝扫码登录
+                  微信扫码登录
                 </span>
                 <BaseButton v-if="yybQrStatus === 'pending' || yybQrStatus === 'scanned' || yybQrStatus === 'authorizing'" variant="ghost" size="sm" @click="resetYybQr">
                   取消
@@ -1236,15 +1419,15 @@ function resetYybQr() {
               </div>
 
               <div v-if="yybQrImage && yybQrStatus !== 'success'" class="flex justify-center">
-                <img :src="yybQrImage" alt="应用宝二维码" class="max-w-[200px] w-full rounded">
+                <img :src="yybQrImage" alt="微信二维码" class="max-w-[200px] w-full rounded">
               </div>
 
               <div class="text-sm text-center" :style="{ color: 'var(--theme-text)' }">
                 <span v-if="yybQrStatus === 'loading'">正在生成二维码...</span>
-                <span v-else-if="yybQrStatus === 'pending'" class="opacity-70">请使用应用宝扫描二维码</span>
+                <span v-else-if="yybQrStatus === 'pending'" class="opacity-70">请使用微信扫描二维码</span>
                 <span v-else-if="yybQrStatus === 'scanned'" class="text-green-500">已扫描，请在手机上确认授权</span>
                 <span v-else-if="yybQrStatus === 'authorizing'" class="opacity-70">正在确认授权...</span>
-                <span v-else-if="yybQrStatus === 'success'" class="text-green-500">✓ 授权成功，账号已添加到应用宝</span>
+                <span v-else-if="yybQrStatus === 'success'" class="text-green-500">✓ 授权成功，账号已添加</span>
                 <span v-else-if="yybQrStatus === 'expired'" class="text-red-500">{{ yybQrError || '二维码已过期' }}</span>
                 <span v-else-if="yybQrStatus === 'error'" class="text-red-500">{{ yybQrError }}</span>
               </div>

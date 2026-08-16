@@ -57,6 +57,7 @@ const { registerAdminCardRoutes } = require("./admin-card-routes");
 const { registerAdminCaptureRoutes } = require("./admin-capture-routes");
 const { registerAdminCurrentUserRoutes } = require("./admin-current-user-routes");
 const { registerAdminYybRoutes } = require("./admin-yyb-routes");
+const { registerAdminNapCatRoutes } = require("./admin-napcat-routes");
 const {
   registerAdminFarmOperationRoutes,
 } = require("./admin-farm-operation-routes");
@@ -181,6 +182,7 @@ function registerAuthGate(expressApp, requireAdminToken) {
     if (
       PUBLIC_API_PATHS.has(req.path)
       || req.path.startsWith("/public/capture-certificate/")
+      || req.path === "/yyb/accounts/avatar"
     ) return next();
     return requireAdminToken(req, res, next);
   });
@@ -584,6 +586,14 @@ function startAdminServer(dataProvider) {
     requireAdminToken,
     sendProviderError,
   });
+  registerAdminNapCatRoutes({
+    app,
+    provider,
+    addOrUpdateAccount,
+    getAccountsForUser,
+    canAccessAccount,
+    userStore,
+  });
   registerAdminAccountRoutes({
     app,
     provider,
@@ -598,6 +608,7 @@ function startAdminServer(dataProvider) {
     getAccessibleAccountIdsFromRequest,
     userStore,
     sendProviderError,
+    requireAdminRole,
   });
   registerAdminQrLoginRoutes({ app });
   registerAdminFriendRoutes({ app, provider, store, getAccountIdFromRequest, canAccessAccount, sendProviderError });

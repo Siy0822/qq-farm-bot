@@ -34,32 +34,22 @@ const {
   putWeedsDetailed,
 } = require('./friend-operation-limits');
 
-// ===== 超时包装 =====
-/**
- * 给一个 Promise 加超时。超时后 reject，并吞掉原 promise 可能后来才到的 reject，
- * 避免 unhandledRejection。原 promise 的正常 resolve/reject 仍按结果传递（未被吞）。
- */
 function withTimeout(promise, ms, label) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error(`${label || '操作'}超时(${ms}ms)`)), ms);
   });
-  if (promise && typeof promise.catch === 'function') {
-    promise.catch(() => { /* 吞掉超时后迟到的 reject */ });
-  }
-  return Promise.race([promise, timeout]).finally(() => { if (timer) clearTimeout(timer); });
+  if (promise && typeof promise.catch === 'function') promise.catch(() => {});
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 // ===== Batch helper =====
 
 /**
- * Run an operation on multiple land IDs. Batch-first, per-block fallback.
+ * Run an operation on multiple land IDs. Falls back to single-ID calls if batch fails.
  * Returns the number of successful operations.
- *
- * 【2026-08-13 优化】批量优先：先用 batchFn 一次请求全部 landIds（单次网络往返），
- * 批量成功即按全部计数；批量失败（服务端不支持批量/整批报错）才逐块回退精确统计。
- * 原实现纯逐块调用（服务端对批量 land_ids 处理不可靠的顾虑），极速务农下是最大耗时源。
- * stepDelayMs 可调（极速务农传小值，普通模式保持 50ms 节奏）。
  */
 async function runBatchWithFallback(landIds, batchFn, singleFn, opts = {}) {
   const ids = Array.isArray(landIds) ? landIds.filter(Boolean) : [];
@@ -67,16 +57,14 @@ async function runBatchWithFallback(landIds, batchFn, singleFn, opts = {}) {
   const rawDelay = opts.stepDelayMs === undefined ? 50 : Number(opts.stepDelayMs) || 0;
   const delay = Math.max(0, Math.min(rawDelay, 500));
 
-  // 1) 批量优先：一次请求全部 landIds
   try {
     await batchFn(ids);
     if (delay > 0) await sleep(delay);
     return ids.length;
-  } catch (batchErr) {
-    // 批量失败（可能服务端部分处理/整批报错），落到逐块回退精确统计
+  } catch {
+    // 服务端不接受批量请求时，逐块重试并精确统计成功数。
   }
 
-  // 2) 逐块回退：精确知道每块是否成功，统计准确。
   let ok = 0;
   for (const id of ids) {
     try {
@@ -84,8 +72,6 @@ async function runBatchWithFallback(landIds, batchFn, singleFn, opts = {}) {
       ok++;
     } catch (singleErr) {
       const msg = singleErr && singleErr.message ? singleErr.message : String(singleErr);
-      // 次数用完类错误、以及「作物当前无需该操作」类错误均静默跳过
-      // （服务端在并发帮助/状态滞后时会返回这些，属正常业务结果，无需告警刷屏）
       const silenced = ['1001046', 'used up', '1001014', '1001015', '1001018',
         '尚未干旱', '不需要除草', '不需要除虫'];
       if (!silenced.some(s => msg.includes(s))) {
@@ -720,9 +706,6 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
 
   let enterReply;
   try {
-    // 【2026-08-13 修复】极速务农（fastMode）下给 Enter 套本地 9s 超时：
-    // 全局 sendMsgAsync 默认 20s，连接退化时每个 Enter 干等 20s，3 次失败才被外层早退，
-    // 等于白白卡 60s。缩短到 9s 让"连续失败早退"更快生效（套娃吞掉内部晚到 reject）。
     const enterPromise = enterFriendFarm(gid);
     enterReply = fastMode
       ? await withTimeout(enterPromise, 9000, `进入${name}农场`)
@@ -739,6 +722,7 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
       friendName: name,
       friendGid: gid,
     });
+    if (fastMode) throw err;
     return { acted: false, entered: false };
   }
 
@@ -784,10 +768,6 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
   ];
 
   const useExpCheck = hasGuardDog ? false : checkExpLimit;
-
-  // 【2026-08-13 修复】极速务农（fastMode）节奏回稳：块间 10→30ms、类间 30→100ms，
-  // a3eab74 压到 10/30ms 把单条 WS 请求密度抬高 4~7 倍，易触发服务端限流→Enter 超时。
-  // 保留"批量优先"提速红利，但把密度降回安全区（仍远快于普通模式 50/200ms）。
   const stepDelayMs = fastMode ? 50 : 50;
   const classDelayMs = fastMode ? 150 : 200;
 

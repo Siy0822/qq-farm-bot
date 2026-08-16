@@ -395,10 +395,12 @@ function registerAdminSystemRoutes({
   app.get(
     "/api/admin/wx-config",
     requireAdminToken,
-    requireAdminRole,
     (req, res) => {
       try {
-        res.json({ ok: true, data: store.getGlobalWxConfig() });
+        const cfg = store.getGlobalWxConfig();
+        const isAdmin = req.currentUser?.role === "admin" || req.currentUser?.role === "super_admin";
+        // 普通用户不返回 apiKey：扫码等接口由后端代理时自动回退环境变量 YYB_API_KEY，避免泄露容器内 Bearer token
+        res.json({ ok: true, data: isAdmin ? cfg : { ...cfg, apiKey: "" } });
       } catch (error) {
         res.status(500).json({ ok: false, error: error.message });
       }

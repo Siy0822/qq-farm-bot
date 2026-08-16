@@ -779,7 +779,7 @@ function onKickout(info) {
 
 function onReconnectFailed(info) {
     const reason = info && info.reason ? info.reason : '未知';
-    log('系统', `连接中断，准备交由应用宝离线重连。原因: ${  reason}`);
+    log('系统', `连接中断，准备交由主进程按账号登录方式重连。原因: ${  reason}`);
     sendToMaster({ type: 'ws_reconnect_failed', reason });
     stopBot().catch(() => exitWorker(0));
 }

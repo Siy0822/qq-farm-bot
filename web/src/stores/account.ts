@@ -16,6 +16,9 @@ export interface Account {
   avatarUrl?: string
   username?: string
   platform?: string
+  loginType?: string
+  yybOpenid?: string
+  connected?: boolean
   running?: boolean
   // Add other fields as discovered
 }

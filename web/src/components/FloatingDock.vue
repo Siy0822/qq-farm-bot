@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useAccountStore, getPlatformLabel, getPlatformClass } from '@/stores/account'
@@ -17,41 +17,6 @@ const showAccountPopup = ref(false)
 const showAccountModal = ref(false)
 const showRemarkModal = ref(false)
 const accountToEdit = ref<any>(null)
-
-// ---------- 滚动方向显隐导航栏（向下滑隐藏 / 向上滑显示） ----------
-// 捕获阶段监听 document 上所有元素的 scroll 事件，不依赖特定选择器：
-// 无论实际滚动发生在 window/body 还是页面内任意滚动容器，都能覆盖。
-const dockHidden = ref(false)
-let lastScrollTop = 0
-let lastScrollTarget: EventTarget | null = null
-const SCROLL_THRESHOLD = 5 // 滚动超过该像素才算"滑过"，防误触
-
-function scrollTopOf(target: EventTarget | null): number {
-  if (!target) return 0
-  if (target === document || target === document.documentElement || target === document.body) {
-    return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0
-  }
-  const el = target as HTMLElement
-  return typeof el.scrollTop === 'number' ? el.scrollTop : 0
-}
-
-function handleScroll(e: Event) {
-  const target = e.target
-  const st = scrollTopOf(target)
-  // 滚动源切换（如从主容器切到子面板）：重置基准，不误判方向
-  if (target !== lastScrollTarget) {
-    lastScrollTarget = target
-    lastScrollTop = st
-    return
-  }
-  const delta = st - lastScrollTop
-  if (Math.abs(delta) < SCROLL_THRESHOLD) {
-    lastScrollTop = st
-    return
-  }
-  dockHidden.value = delta > 0 // 向下滑隐藏，向上滑显示
-  lastScrollTop = st
-}
 
 const navItems = [
   { key: 'dashboard', path: '/', label: '首页', icon: 'i-carbon-home' },
@@ -89,19 +54,9 @@ function handleOutsideClick(e: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', handleOutsideClick)
-  // 捕获阶段监听：能收到文档内任意元素的 scroll（含 window/body 滚动）
-  document.addEventListener('scroll', handleScroll, { capture: true, passive: true })
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleOutsideClick)
-  document.removeEventListener('scroll', handleScroll, { capture: true } as EventListenerOptions)
-})
-
-// 切换页面时恢复导航栏显示，避免上一页隐藏的状态带到下一页
-watch(() => route.fullPath, () => {
-  dockHidden.value = false
-  lastScrollTarget = null
-  lastScrollTop = 0
 })
 
 function selectAccount(acc: any) {
@@ -121,9 +76,12 @@ function accountSub(acc: any) {
 }
 
 function avatarSrc(acc: any) {
+  const direct = acc?.avatar || acc?.avatarUrl || acc?.avatar_url || ''
+  if (direct) return direct
+  if (String(acc?.platform || '').toLowerCase() === 'wx') return ''
   const qq = acc?.uin || acc?.qq
   if (qq && /^\d+$/.test(qq)) return `https://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100`
-  return acc?.avatar || ''
+  return ''
 }
 
 function hasAvatar(acc: any) {
@@ -166,8 +124,7 @@ async function handleAccountSaved() {
 </script>
 
 <template>
-  <div class="ambient-glow" :class="{ 'dock-hidden': dockHidden }" />
-  <div class="floating-nav-wrapper" :class="{ 'dock-hidden': dockHidden }">
+  <div class="floating-nav-wrapper">
     <nav class="floating-nav" role="navigation" aria-label="主导航">
       <button
         v-for="item in navItems"
@@ -260,54 +217,45 @@ async function handleAccountSaved() {
 
 <style scoped>
 .floating-nav-wrapper {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  position: relative;
   z-index: 1000;
   display: flex;
-  justify-content: center;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  pointer-events: none;
-  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
-  will-change: transform;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 100%;
 }
 .floating-nav-wrapper.dock-hidden {
-  transform: translateY(calc(100% + 28px));
-  opacity: 0;
-  pointer-events: none;
+  display: none;
 }
 .ambient-glow {
-  position: fixed;
-  bottom: -60px;
+  position: absolute;
+  bottom: -40px;
   left: 50%;
   transform: translateX(-50%);
   width: 360px;
   height: 140px;
   background: radial-gradient(ellipse, color-mix(in srgb, var(--theme-primary) 22%, transparent), transparent 70%);
   pointer-events: none;
-  z-index: 999;
+  z-index: -1;
   filter: blur(36px);
-  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
-  will-change: transform;
 }
 .ambient-glow.dock-hidden {
-  transform: translateX(-50%) translateY(calc(100% + 28px));
   opacity: 0;
 }
 .floating-nav {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  margin-bottom: 20px;
-  border-radius: 28px;
+  justify-content: space-around;
+  width: 100%;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  border-radius: 16px 16px 0 0;
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  background: transparent;
+  background: color-mix(in srgb, var(--theme-bg) 78%, transparent);
   border: 1px solid rgba(15, 23, 42, 0.1);
-  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.16);
+  border-bottom: none;
+  box-shadow: 0 -4px 24px rgba(15, 23, 42, 0.08);
   animation: nav-slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .floating-nav::-webkit-scrollbar { display: none; }
@@ -320,7 +268,8 @@ async function handleAccountSaved() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 64px;
+  flex: 1;
+  max-width: 96px;
   height: 56px;
   border-radius: 20px;
   cursor: pointer;
@@ -501,9 +450,10 @@ async function handleAccountSaved() {
 
   @media (prefers-color-scheme: light) {
   .floating-nav {
-    background: transparent;
-    border: 1px solid rgba(15, 23, 42, 0.1);
-    box-shadow: 0 8px 32px rgba(15, 23, 42, 0.14);
+    background: color-mix(in srgb, #f8fafc 82%, transparent);
+    border-color: rgba(15, 23, 42, 0.1);
+    border-bottom-color: transparent;
+    box-shadow: 0 -4px 24px rgba(15, 23, 42, 0.08);
   }
   .nav-item { color: rgba(0, 0, 0, 0.5); }
   .nav-item--active { color: #000; background: rgba(0, 0, 0, 0.05); box-shadow: 0 0 20px color-mix(in srgb, var(--theme-primary) 15%, transparent); }
@@ -536,8 +486,8 @@ async function handleAccountSaved() {
 }
 
 @media (max-width: 640px) {
-  .floating-nav { gap: 4px; padding: 6px 8px; margin-bottom: 16px; border-radius: 24px; }
-  .nav-item { width: 56px; height: 50px; border-radius: 18px; }
+  .floating-nav { gap: 4px; padding: 4px 4px calc(4px + env(safe-area-inset-bottom, 0px)); border-radius: 12px 12px 0 0; }
+  .nav-item { height: 50px; border-radius: 18px; }
   .nav-item-icon { font-size: 22px; }
   .account-popup { margin-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
 }
@@ -551,9 +501,10 @@ async function handleAccountSaved() {
 }
 
 .dark .floating-nav {
-  background: rgba(30, 30, 40, 0.32);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 0.5px rgba(255, 255, 255, 0.05) inset;
+  background: rgba(30, 30, 40, 0.55);
+  border-color: rgba(255, 255, 255, 0.1);
+  border-bottom-color: transparent;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.35);
 }
 .dark .nav-item { color: rgba(255, 255, 255, 0.5); }
 .dark .nav-item--active { color: #fff; background: rgba(255, 255, 255, 0.1); }

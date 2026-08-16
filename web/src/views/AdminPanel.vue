@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AdminTabKey } from '@/components/admin/AdminPanelTabs.vue'
 import { onMounted, ref, watch } from 'vue'
+import AdminAccountPanel from '@/components/admin/AdminAccountPanel.vue'
 import AdminAlertModal from '@/components/admin/AdminAlertModal.vue'
 import AdminCardConfirmModals from '@/components/admin/AdminCardConfirmModals.vue'
 import AdminCardPanel from '@/components/admin/AdminCardPanel.vue'
@@ -16,6 +17,7 @@ import { useAdminCards } from '@/composables/useAdminCards'
 import { useAdminLoginLogs } from '@/composables/useAdminLoginLogs'
 import { useAdminSystemConfig } from '@/composables/useAdminSystemConfig'
 import { useAdminUsers } from '@/composables/useAdminUsers'
+import { useAdminAccounts } from '@/composables/useAdminAccounts'
 import { useToastStore } from '@/stores/toast'
 
 const toast = useToastStore()
@@ -27,6 +29,7 @@ watch(activeTab, (newTab) => {
 })
 
 const tabs = [
+  { key: 'account', label: '账号', icon: 'i-carbon-user-multiple' },
   { key: 'card', label: '卡密', icon: 'i-carbon-ticket' },
   { key: 'user', label: '用户', icon: 'i-carbon-user-admin' },
   { key: 'log', label: '日志', icon: 'i-carbon-document' },
@@ -148,6 +151,29 @@ const {
 
 const showClearLogsConfirm = ref(false)
 const {
+  accounts,
+  accountsLoading,
+  accountSearchQuery,
+  filteredAccounts,
+  runningCount,
+  wxCount,
+  qqCount,
+  showDeleteConfirm,
+  pendingDelete,
+  deleteLoading,
+  showRemarkModal,
+  pendingRemark,
+  remarkValue,
+  remarkLoading,
+  fetchAccounts: fetchAllAccounts,
+  toggleAccountRun,
+  requestDelete,
+  confirmDelete,
+  openRemarkModal,
+  confirmRemark,
+} = useAdminAccounts()
+
+const {
   loginLogs,
   loginLogsLoading,
   loginLogsTotal,
@@ -213,6 +239,7 @@ const {
 } = useAdminSystemConfig({ showAlert })
 
 onMounted(() => {
+  fetchAllAccounts()
   fetchCards()
   fetchUsers()
   fetchLoginLogs()
@@ -234,8 +261,32 @@ onMounted(() => {
     />
 
     <AdminPanelTabs v-model:active-tab="activeTab" :tabs="tabs">
+      <AdminAccountPanel
+        v-if="activeTab === 'account'"
+        v-model:show-delete-confirm="showDeleteConfirm"
+        v-model:pending-delete="pendingDelete"
+        v-model:show-remark-modal="showRemarkModal"
+        v-model:pending-remark="pendingRemark"
+        v-model:remark-value="remarkValue"
+        v-model:search-query="accountSearchQuery"
+        :accounts="accounts"
+        :filtered-accounts="filteredAccounts"
+        :accounts-loading="accountsLoading"
+        :running-count="runningCount"
+        :wx-count="wxCount"
+        :qq-count="qqCount"
+        :delete-loading="deleteLoading"
+        :remark-loading="remarkLoading"
+        @refresh="fetchAllAccounts"
+        @toggle-run="toggleAccountRun"
+        @delete="requestDelete"
+        @open-remark="openRemarkModal"
+        @confirm-delete="confirmDelete"
+        @confirm-remark="confirmRemark"
+      />
+
       <AdminCardPanel
-        v-if="activeTab === 'card'"
+        v-else-if="activeTab === 'card'"
         v-model:show-create-modal="showCreateModal"
         v-model:new-card="newCard"
         v-model:select-all="selectAll"

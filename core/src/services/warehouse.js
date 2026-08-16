@@ -30,9 +30,6 @@ const { updateStatusGold } = require('./status');
 // 批量出售大小
 const SELL_BATCH_SIZE = 15;
 
-// 自动出售跳过名单：这些物品即便在物品表标记为可售，实际调 ItemService.Sell
-// 也会被服务端以 code=1000020 请求参数错误 拒绝（如 41221）。为避免每轮刷屏报错，
-// 自动出售前直接从候选剔除（手动出售不受影响，仍会真实尝试并报错）。
 const AUTO_SELL_SKIP_ITEM_IDS = new Set([41221]);
 
 // 化肥容器上限（小时）

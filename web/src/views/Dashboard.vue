@@ -51,7 +51,13 @@ const startBtnStyle = computed(() => appStore.isDark
   ? { background: 'linear-gradient(135deg, #1e3a8a, #3730a3)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.4)' }
   : { background: 'linear-gradient(135deg, #3b82f6, #6366f1)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.1)' })
 const startAllLoading = ref(false)
-const startAllResults = ref<{ name: string; ok: boolean; msg: string }[]>([])
+type StartAllResult = {
+  id: string
+  name: string | number
+  status: 'pending' | 'success' | 'failed'
+  msg: string
+}
+const startAllResults = ref<StartAllResult[]>([])
 const showStartAllModal = ref(false)
 const accountToEdit = ref<any>(null)
 
@@ -91,7 +97,10 @@ async function startAllAccounts() {
   startAllLoading.value = true
   startAllResults.value = []
 
+  // 点击时先刷新一次运行状态，避免把已经在线但前端缓存仍是离线的账号重复启动。
+  await accountStore.fetchAccounts()
   const accs = accountStore.accounts
+  const alreadyRunning = accs.filter(a => a.running)
   const toStart = accs.filter(a => !a.running)
 
   if (toStart.length === 0) {
@@ -99,36 +108,114 @@ async function startAllAccounts() {
     for (const acc of accs) {
       try {
         await accountStore.stopAccount(String(acc.id))
-        startAllResults.value.push({ name: acc.name || acc.nick || acc.id, ok: true, msg: '已停止' })
+        startAllResults.value.push({ id: String(acc.id), name: acc.name || acc.nick || acc.id, status: 'success', msg: '已停止' })
       } catch {
-        startAllResults.value.push({ name: acc.name || acc.nick || acc.id, ok: false, msg: '停止失败' })
+        startAllResults.value.push({ id: String(acc.id), name: acc.name || acc.nick || acc.id, status: 'failed', msg: '停止失败' })
       }
     }
+    startAllLoading.value = false
+    showStartAllModal.value = true
   } else {
-    // 启动所有离线账号
+    // 先显示弹窗；各账号完成登录后立即单独更新，不等待其他账号。
+    startAllResults.value = [
+      ...alreadyRunning.map(acc => ({
+        id: String(acc.id),
+        name: acc.name || acc.nick || acc.id,
+        status: 'success' as const,
+        msg: '已登录',
+      })),
+      ...toStart.map(acc => ({
+        id: String(acc.id),
+        name: acc.name || acc.nick || acc.id,
+        status: 'pending' as const,
+        msg: '正在登录…',
+      })),
+    ]
+    showStartAllModal.value = true
+
+    const startedAt = Date.now()
     for (const acc of toStart) {
       try {
         await api.post(`/api/accounts/${acc.id}/start`)
       } catch {
-        startAllResults.value.push({ name: acc.name || acc.nick || acc.id, ok: false, msg: '启动失败，请重新扫码' })
+        const result = startAllResults.value.find(item => item.id === String(acc.id))
+        if (result) {
+          result.status = 'failed'
+          result.msg = '启动请求失败'
+        }
       }
     }
-    // 等待 5 秒后检查实际运行状态
-    await new Promise(r => setTimeout(r, 5000))
-    await accountStore.fetchAccounts()
-    const latest = accountStore.accounts
-    for (const acc of toStart) {
-      const updated = latest.find(a => String(a.id) === String(acc.id))
-      if (updated?.running) {
-        startAllResults.value.push({ name: acc.name || acc.nick || acc.id, ok: true, msg: '启动成功' })
-      } else {
-        startAllResults.value.push({ name: acc.name || acc.nick || acc.id, ok: false, msg: '启动失败，请重新扫码' })
-      }
-    }
-  }
 
-  startAllLoading.value = false
-  showStartAllModal.value = true
+    // 直接按每个账号的运行日志判定，不再盲等固定 30 秒。
+    // QQ 首次旧 Code 被拒绝属于正常的 NapCat 刷新流程，不能提前判失败。
+    await Promise.all(toStart.map(async (acc) => {
+      const result = startAllResults.value.find(item => item.id === String(acc.id))
+      if (!result || result.status !== 'pending') return
+      const isNapcatQq = String(acc.platform || '').toLowerCase() === 'qq'
+        && String(acc.loginType || '') === 'napcat_open_auth'
+      const giveUpAt = startedAt + 15000
+
+      while (Date.now() < giveUpAt && result.status === 'pending') {
+        await new Promise(r => setTimeout(r, 500))
+        try {
+          const [accountsResponse, logsResponse] = await Promise.all([
+            api.get('/api/accounts'),
+            api.get('/api/logs', {
+              params: { accountId: String(acc.id), limit: 100 },
+            }),
+          ])
+          const latestAccounts = Array.isArray(accountsResponse.data?.data?.accounts)
+            ? accountsResponse.data.data.accounts
+            : []
+          const latestAccount = latestAccounts.find((item: any) => String(item.id) === String(acc.id))
+          // 以后端实时连接状态为第一判据；日志只用于补充结果和失败原因。
+          if (latestAccount?.connected) {
+            result.status = 'success'
+            result.name = latestAccount.name || latestAccount.nick || result.name
+            result.msg = '登录成功'
+            return
+          }
+
+          const logs = Array.isArray(logsResponse.data?.data) ? logsResponse.data.data : []
+          const recentText = logs
+            .filter((log: any) => Number(log?.ts || 0) >= startedAt)
+            .map((log: any) => String(log?.msg || ''))
+            .join('\n')
+
+          if (/登录成功:/.test(recentText)) {
+            result.status = 'success'
+            const matchedName = recentText.match(/登录成功:\s*([^\n(]+)/)?.[1]?.trim()
+            if (matchedName) result.name = matchedName
+            result.msg = '登录成功'
+            return
+          }
+
+          const processExited = /进程退出\s*\(code=0,\s*signal=none\)/.test(recentText)
+          // 普通账号进程正常退出表示本次登录流程已结束，可立即给出失败结果；
+          // NapCat QQ 的旧 worker 会在刷新 Code 前正常退出，这是重连流程的一部分。
+          const terminalProcessExit = processExited && !isNapcatQq
+          const wxLoginExpired = !isNapcatQq
+            && /应用宝 code 刷新失败|login_buffer expired|re-scan required/.test(recentText)
+          const qqTerminalFailure = isNapcatQq
+            && /NapCat.*重连失败|NapCat.*刷新.*失败|自动重连已达上限/.test(recentText)
+          const genericStartFailure = /启动失败/.test(recentText)
+          if (terminalProcessExit || wxLoginExpired || qqTerminalFailure || genericStartFailure) {
+            result.status = 'failed'
+            result.msg = wxLoginExpired ? '登录已过期，请重新扫码' : '登录失败，请重新扫码'
+            return
+          }
+        } catch {
+          // 日志接口偶发失败时继续下一轮，避免把查询失败当成登录失败。
+        }
+      }
+
+      if (result.status === 'pending') {
+        result.status = 'failed'
+        result.msg = '登录失败，请重新扫码'
+      }
+    }))
+    startAllLoading.value = false
+  }
 }
 
 // 当前账号的微信昵称（去括号备注）
@@ -147,6 +234,8 @@ const currentAvatarSrc = computed(() => {
   const status = statusStore.status?.status
   const live = status?.avatar || status?.avatarUrl || status?.avatar_url
   if (live) return String(live).trim()
+  if (String(acc.platform || '').toLowerCase() === 'wx')
+    return String(acc.avatar || acc.avatarUrl || '').trim()
   const qq = String(acc.uin || acc.qq || '').trim()
   if (/^\d+$/.test(qq)) return `https://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100`
   return ''
@@ -174,6 +263,7 @@ const hasActiveLogFilter = computed(() =>
   !!(filter.module || filter.event || filter.keyword || filter.isWarn),
 )
 const activeTab = ref('overview')
+const navCollapsed = ref(false)
 const panelEl = ref<HTMLElement | null>(null)
 
 const swipeStart = { x: 0, y: 0 }
@@ -210,7 +300,7 @@ watch(activeTab, () => {
 const dashboardTabs = [
   { key: 'overview', label: '概览', icon: 'i-carbon-chart-pie' },
   { key: 'farm', label: '农场', icon: 'i-carbon-tree' },
-  { key: 'bag', label: '背包', icon: 'i-carbon-backpack' },
+  { key: 'bag', label: '背包', icon: 'i-carbon-shopping-bag' },
   { key: 'friends', label: '好友', icon: 'i-carbon-user-multiple' },
   { key: 'pet', label: '宠物', icon: 'i-carbon-dog-walker' },
   { key: 'tasks', label: '任务', icon: 'i-carbon-task' },
@@ -822,22 +912,31 @@ useIntervalFn(updateCountdowns, 1000)
       </linearGradient>
     </defs>
   </svg>
-  <div ref="panelEl" class="flex flex-col gap-2 pt-1 md:pt-2 overflow-x-hidden" @touchstart="onSwipeStart" @touchend="onSwipeEnd">
-    <!-- 首页子标签导航 -->
-
-    <div class="sticky top-0 z-30 -mx-1 px-1 pt-1" style="transform: translateZ(0);">
-
+  <div ref="panelEl" class="flex gap-2 pt-1 md:pt-2 overflow-x-hidden" @touchstart="onSwipeStart" @touchend="onSwipeEnd">
+    <!-- 左侧竖列子标签导航（收起时整体隐藏） -->
+    <div v-show="!navCollapsed" class="sticky top-0 z-30 self-start shrink-0 pt-1">
       <DashboardTabs
-
+        vertical
+        :collapsed="navCollapsed"
         :tabs="dashboardTabs"
-
         :active-tab="activeTab"
-
         @update:active-tab="activeTab = $event"
-
+        @update:collapsed="navCollapsed = $event"
       />
-
     </div>
+
+    <!-- 右侧内容区 -->
+    <div class="min-w-0 flex-1 relative">
+
+    <!-- 收起时：展开按钮置于内容区左上角 -->
+    <button
+      v-if="navCollapsed"
+      class="absolute left-0 top-0 z-30 flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--theme-border)] bg-[var(--theme-glass)] text-[color-mix(in_srgb,var(--theme-text)_60%,transparent)] backdrop-blur-xl shadow-md"
+      :title="'展开导航'"
+      @click="navCollapsed = false"
+    >
+      <span class="i-carbon-menu text-xl" />
+    </button>
 
     <!-- ===== 概览 ===== -->
     <div v-show="activeTab === 'overview'" class="overview-panel grid grid-cols-1 gap-4 lg:grid-cols-3 sm:grid-cols-2">
@@ -847,7 +946,7 @@ useIntervalFn(updateCountdowns, 1000)
           <!-- 第一行：主题切换 + 居中标题 -->
           <div class="flex items-center px-5 py-3 border-b border-gray-100/80 dark:border-gray-700/80">
             <!-- 主题切换按钮 左 -->
-            <ThemeToggle class="shrink-0 mr-2" />
+            <ThemeToggle class="shrink-0 mr-2" :class="navCollapsed ? 'ml-10' : ''" />
             <div class="flex flex-1 items-center justify-center gap-2">
               <div class="i-fas-user-circle text-blue-500" />
               <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">QQ农场智能助手</span>
@@ -1267,6 +1366,8 @@ useIntervalFn(updateCountdowns, 1000)
     <div v-show="activeTab === 'analytics'" class="analytics-container h-full">
       <Analytics />
     </div>
+
+    </div>
   </div>
 
   <Teleport to="body">
@@ -1287,13 +1388,21 @@ useIntervalFn(updateCountdowns, 1000)
           <h3 class="mb-4 text-center text-base font-bold">🚀 一键启动结果</h3>
           <div class="flex flex-col gap-2">
             <div
-              v-for="(r, i) in startAllResults"
-              :key="i"
+              v-for="r in startAllResults"
+              :key="r.id"
               class="flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm"
-              :class="r.ok ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'"
+              :class="r.status === 'success'
+                ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300'
+                : r.status === 'failed'
+                  ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
+                  : 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300'"
             >
-              <div class="flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold text-white" :class="r.ok ? 'bg-green-500' : 'bg-red-500'">
-                {{ r.ok ? '✓' : '✕' }}
+              <div
+                class="flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold text-white"
+                :class="r.status === 'success' ? 'bg-green-500' : r.status === 'failed' ? 'bg-red-500' : 'bg-blue-500'"
+              >
+                <span v-if="r.status === 'pending'" class="i-svg-spinners-90-ring-with-bg" />
+                <template v-else>{{ r.status === 'success' ? '✓' : '✕' }}</template>
               </div>
               <span class="font-medium">{{ r.name }}</span>
               <span class="ml-auto text-xs opacity-75">{{ r.msg }}</span>
@@ -1357,8 +1466,8 @@ useIntervalFn(updateCountdowns, 1000)
 /* 嵌入式组件玻璃覆盖 - 图鉴 / 分析 / 背包 / 好友 / 设置 */
 :deep(.illustrated-container),
 :deep(.analytics-container),
-.illustrated-container :deep(.rounded-lg),
-.analytics-container :deep(.rounded-lg) {
+.illustrated-container :deep(.rounded-lg):not(button),
+.analytics-container :deep(.rounded-lg):not(button) {
   background: var(--theme-glass) !important;
   border: 1px solid var(--theme-border) !important;
   backdrop-filter: blur(16px);

@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
-import { computed } from 'vue'
 
 interface AutomationSettings {
   automation: {
@@ -61,14 +61,13 @@ const emit = defineEmits<{
 
 const settings = defineModel<AutomationSettings>('settings', { required: true })
 
-// 定时极速务农时间段：拆成起止两个 time input，回写为 "HH:mm-HH:mm"
 const turboWindow = computed({
   get: () => {
-    const [s, e] = (settings.value.automation.friend_turbo_schedule_time || '').split('-')
-    return { start: s || '08:00', end: e || '10:00' }
+    const [start, end] = (settings.value.automation.friend_turbo_schedule_time || '').split('-')
+    return { start: start || '08:00', end: end || '10:00' }
   },
-  set: (v) => {
-    settings.value.automation.friend_turbo_schedule_time = `${v.start}-${v.end}`
+  set: (value) => {
+    settings.value.automation.friend_turbo_schedule_time = `${value.start}-${value.end}`
   },
 })
 
@@ -239,17 +238,9 @@ function isFastMatureFertilizerMode(mode: string) {
           <BaseSwitch v-model="settings.automation.friend_turbo_scheduled" />
         </div>
         <div v-if="settings.automation.friend_turbo_scheduled" class="flex items-center gap-2 rounded-full border border-white/40 bg-[var(--theme-glass)] px-3 py-2.5 shadow-sm backdrop-blur-md dark:border-white/10">
-          <input
-            v-model="turboWindow.start"
-            type="time"
-            class="rounded-md border border-white/40 bg-white/70 px-2 py-1 text-[13px] text-gray-800 dark:bg-white/10 dark:text-gray-100"
-          />
+          <input v-model="turboWindow.start" type="time" class="rounded-md border border-white/40 bg-white/70 px-2 py-1 text-[13px] text-gray-800 dark:bg-white/10 dark:text-gray-100">
           <span class="text-[13px] text-gray-500">至</span>
-          <input
-            v-model="turboWindow.end"
-            type="time"
-            class="rounded-md border border-white/40 bg-white/70 px-2 py-1 text-[13px] text-gray-800 dark:bg-white/10 dark:text-gray-100"
-          />
+          <input v-model="turboWindow.end" type="time" class="rounded-md border border-white/40 bg-white/70 px-2 py-1 text-[13px] text-gray-800 dark:bg-white/10 dark:text-gray-100">
         </div>
         </template>
         </div>

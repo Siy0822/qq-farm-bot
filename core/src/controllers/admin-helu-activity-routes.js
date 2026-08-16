@@ -11,6 +11,15 @@ function isQingmeiClaimAlreadyHandledError(err) {
     || message.includes("already");
 }
 
+function isQingmeiClaimClosedError(err) {
+  const message = String(err?.message || err || "");
+  return !!err?.qingmeiClaimClosed
+    || message.includes("1034001")
+    || message.includes("活动未开始")
+    || message.includes("领取已于")
+    || message.includes("尚未开始");
+}
+
 function isQingmeiWineBusinessError(err) {
   const message = String(err?.message || err || "");
   return !!err?.qingmeiWine
@@ -189,6 +198,22 @@ function registerAdminHeluActivityRoutes({
         qingmei: result.qingmei || activity?.qingmei || null,
       });
     } catch (err) {
+      if (isQingmeiClaimClosedError(err)) {
+        let closedActivity = null;
+        try {
+          closedActivity = await provider.getHeluActivity(accountId);
+        } catch (_) {
+          closedActivity = null;
+        }
+        return res.json({
+          ok: false,
+          error: err.message,
+          claimWindowClosed: true,
+          claimWindowState: err.qingmeiClaimWindowState || "ended",
+          activity: closedActivity,
+          qingmei: closedActivity?.qingmei || null,
+        });
+      }
       if (isQingmeiClaimAlreadyHandledError(err)) {
         let activity = null;
         try {

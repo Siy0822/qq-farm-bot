@@ -80,7 +80,7 @@ function createAutomationSettings() {
       friend_help_exp_limit: false,
       friend_turbo_mode: false,
       friend_turbo_scheduled: false,
-      friend_turbo_schedule_time: '',
+      friend_turbo_schedule_time: '08:00-10:00',
       golden_bug_clear: true,
       fertilizer_gift: false,
       fertilizer_buy_organic: false,
