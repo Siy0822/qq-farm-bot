@@ -59,58 +59,90 @@ const {
 let isCheckingFriends = false;
 let friendLoopRunning = false;
 let externalSchedulerMode = false;
-let lastEffectiveTurbo = null;
 
+// 【2026-08-15】极速务农每轮最多进 24 人（用户指定分批大小）：
+// 86 个护主犬全量连发 Enter 会把 WS 压垮（9s/15s 超时连锁），
+// 分批 + 轮换起点保证覆盖全部好友且连接稳定。
+const TURBO_MAX_HELP_PER_ROUND = 24;
+let turboRoundIndex = 0;
+
+// ===== 极速务农独占模式 =====
+// 设计：极速务农开启时，暂停农场巡查/买肥/神秘购买等其它会占用同一条 WS 的定时任务，
+// 让连接只服务于「只帮护主犬」循环 + 心跳/ACE，避免动作冲突与心跳被淹没导致假断连。
+// 定时极速务农：开启后仅在用户设定的北京时间时间段内进入独占模式；时间段之外极速务农视为关闭、走正常巡查（前提极速务农总开关已开）。
+let lastEffectiveTurbo = null; // null = 尚未同步
+
+/** 当前北京时间（UTC+8）的分钟数，用于时间段比较 */
 function beijingMinutes() {
-  const date = new Date(Date.now() + 8 * 60 * 60 * 1000);
-  return date.getUTCHours() * 60 + date.getUTCMinutes();
+  const d = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
 }
 
+/** 解析 "HH:mm-HH:mm" 时间段；返回 [startMin, endMin]，非法/跨午夜返回 null */
 function parseScheduleWindow(raw) {
-  const match = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(String(raw || '').trim());
-  if (!match) return null;
-  const start = Number(match[1]) * 60 + Number(match[2]);
-  const end = Number(match[3]) * 60 + Number(match[4]);
-  if (start >= end) return null;
-  return [start, end];
+  const m = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(String(raw || '').trim());
+  if (!m) return null;
+  const s = Number(m[1]) * 60 + Number(m[2]);
+  const e = Number(m[3]) * 60 + Number(m[4]);
+  if (s >= e) return null;
+  return [s, e];
 }
 
+/**
+ * 极速务农当前是否「生效」：
+ * - 总开关关 → 不生效
+ * - 未启用定时 → 持续生效
+ * - 启用定时 → 仅当北京时间落在设定时间段 [start, end) 内生效；段外视为关闭、正常巡查
+ */
 function computeEffectiveTurbo() {
   if (!isAutomationOn('friend_turbo_mode')) return false;
   if (!isAutomationOn('friend_turbo_scheduled')) return true;
-  const raw = getConfigSnapshot(currentAccountId || '').automation.friend_turbo_schedule_time || '';
-  const window = parseScheduleWindow(raw);
-  if (!window) return false;
+  const raw = getConfigSnapshot(userState.accountId || '').automation.friend_turbo_schedule_time || '';
+  const win = parseScheduleWindow(raw);
+  if (!win) return false;
   const now = beijingMinutes();
-  return now >= window[0] && now < window[1];
+  return now >= win[0] && now < win[1];
 }
 
-function syncTurboExclusiveMode() {
+/** 同步独占模式：进入时暂停其它巡查，退出时按各自开关恢复 */
+function syncTurboExclusiveMode(accountId) {
   const effective = computeEffectiveTurbo();
-  if (lastEffectiveTurbo === effective) return;
-  const initialized = lastEffectiveTurbo !== null;
+
+  // 首次调用仅建立基线，避免与 worker-manager 的常规启动逻辑重复启停：
+  // - 启动即开启极速务农 → 暂停其它巡查（必须有动作）
+  // - 启动未开启 → 仅记录状态，农场等由 worker-manager 正常拉起，此处不重复 start
+  if (lastEffectiveTurbo === null) {
+    lastEffectiveTurbo = effective;
+    if (effective) {
+      stopFarmCheckLoop();
+      stopFertilizerBuyCheckTimer();
+      stopMysteryAutoBuyTimer();
+      log('好友', '极速务农独占模式已启用（启动即生效）：已暂停农场巡查 / 化肥自动购买 / 神秘商人自动购买', {
+        module: 'friend', event: 'turbo_exclusive_on',
+      });
+    }
+    return;
+  }
+
+  if (effective === lastEffectiveTurbo) return;
   lastEffectiveTurbo = effective;
 
   if (effective) {
     stopFarmCheckLoop();
     stopFertilizerBuyCheckTimer();
     stopMysteryAutoBuyTimer();
-    log('好友', '极速务农独占模式已启用，已暂停其他自动巡查', {
+    log('好友', '极速务农独占模式已启用：已暂停农场巡查 / 化肥自动购买 / 神秘商人自动购买', {
       module: 'friend', event: 'turbo_exclusive_on',
     });
-  } else if (initialized) {
+  } else {
     if (isAutomationOn('farm')) startFarmCheckLoop();
     if (isAutomationOn('fertilizer_buy_organic') || isAutomationOn('fertilizer_buy_normal')) startFertilizerBuyCheckTimer();
     if (isAutomationOn('mystery_auto_buy')) startMysteryAutoBuyTimer();
-    log('好友', '极速务农独占模式已退出，已恢复其他自动巡查', {
+    log('好友', '极速务农独占模式已退出：已恢复农场巡查 / 化肥自动购买 / 神秘商人自动购买', {
       module: 'friend', event: 'turbo_exclusive_off',
     });
   }
 }
-
-const TURBO_FRIENDS_LIST_TTL_MS = 30 * 1000;
-let turboFriendsListCache = null;
-let turboFriendsListCacheAt = 0;
 const friendScheduler = createScheduler('friend');
 let badExecutedOnStartup = false;
 let consecutiveBadFailureCount = 0;
@@ -142,10 +174,20 @@ function ensureExpLimitCallback() {
   });
 }
 
+// 【2026-08-13 优化】极速务农模式下好友列表短 TTL 缓存（30s）：
+// turbo 巡查 6 秒一轮，每轮 getAllFriends 分批拉取（35 人/批）在好友多时很耗时。
+// turbo 目标是"进全部护主犬、忽略快照"，护主犬集合来自磁盘缓存，列表缓存对判定几乎无副作用。
+const TURBO_FRIENDS_LIST_TTL_MS = 30 * 1000;
+let turboFriendsListCache = null;
+let turboFriendsListCacheAt = 0;
+
 async function getCachedFriendsList(forceRefresh = false) {
-  const turboMode = computeEffectiveTurbo();
-  if (!forceRefresh && turboMode && turboFriendsListCache
-      && Date.now() - turboFriendsListCacheAt < TURBO_FRIENDS_LIST_TTL_MS) {
+  const turboMode = !!isAutomationOn('friend_turbo_mode');
+  if (
+    turboMode && !forceRefresh &&
+    turboFriendsListCache &&
+    (Date.now() - turboFriendsListCacheAt) < TURBO_FRIENDS_LIST_TTL_MS
+  ) {
     return turboFriendsListCache;
   }
   const reply = await getAllFriends();
@@ -163,39 +205,10 @@ function clearFriendsListCache() {
 }
 
 async function bootstrapFriendDogInfoCacheIfNeeded() {
-  if (Date.now() < dogInfoBootstrapReadyAt) return;
-
-  const accountId = process.env.FARM_ACCOUNT_ID || '';
-  if (!accountId) return;
-  if (!isAutomationOn('friend') || !isConnected()) return;
-
-  // 【2026-08-11 修复】护主犬缓存刷新判断改用"上次全量刷新时间戳"，不再看缓存内容：
-  // 无护主犬好友时 fetchFriendsDogInfo(forceRefresh) 会写入空对象 {}，
-  // readFriendDogInfoCache 返回 {} 后 Object.keys({}).length===0 恒为 true → cacheEmpty 永远 true
-  // → 每轮巡查都触发全量刷新（issue #30 死循环，"护主犬 0 个"用户修复前永远刷屏）。
-  // 改为时间戳判断：只要全量刷新执行过（无论有没有护主犬），30 分钟 TTL 内不再触发；
-  // 刷新失败才重置时间戳允许下轮重试。
-  const now = Date.now();
-  const stale = (now - lastFullDogInfoRefreshAt) > DOG_INFO_FULL_REFRESH_TTL_MS;
-  if (lastFullDogInfoRefreshAt > 0 && !stale) return;
-
-  const isInitialRefresh = lastFullDogInfoRefreshAt <= 0;
-  lastFullDogInfoRefreshAt = now;
-  try {
-    log('好友', isInitialRefresh
-      ? '护主犬缓存尚未建立（或上次失败），自动获取一次好友狗信息'
-      : '护主犬缓存已过期，执行周期性全量刷新', {
-      module: 'friend',
-      event: '自动获取好友狗信息',
-      source: 'friend_loop_bootstrap',
-      fullRefresh: !isInitialRefresh,
-    });
-    await fetchFriendsDogInfo(true); // forceRefresh：全量重拉并重建缓存
-  } catch (err) {
-    // 失败重置时间戳，下轮巡查可重试（不再一次性放弃）
-    lastFullDogInfoRefreshAt = 0;
-    logWarn('好友', `自动获取好友狗信息失败: ${err.message}`);
-  }
+  // 【2026-08-15】主动刷新护主犬缓存已删除（用户明确要求）：启动/周期全量刷新会
+  // 逐个进 468 好友查狗（串行 ~90 秒），压垮 WS 连接导致掉线。
+  // 狗信息只靠日常偷菜/帮忙被动收集（cacheDogInfoFromEnterReply），手动刷新走面板按钮。
+  return;
 }
 
 function syncAutomationPatchToMaster(patch) {
@@ -324,7 +337,9 @@ async function checkFriends(options = {}) {
 
   const accountId = userState.accountId || process.env.FARM_ACCOUNT_ID || '';
   currentAccountId = accountId;
-  syncTurboExclusiveMode();
+  // 极速务农独占模式：依据开关/定时同步其它巡查的暂停与恢复（幂等，仅状态翻转时动作）
+  syncTurboExclusiveMode(accountId);
+
   const helpEnabled = !!isAutomationOn('friend_help');
   const stealEnabled = !!isAutomationOn('friend_steal');
   const badEnabled = !!isAutomationOn('friend_bad');
@@ -432,8 +447,10 @@ async function checkFriends(options = {}) {
           const weedNum = plant ? toNum(plant.weed_num) : 0;
           const insectNum = plant ? toNum(plant.insect_num) : 0;
 
-          // 极速务农：忽略滞后快照筛选，进全部护主犬（依赖进农场后的实时数据，根治漏帮）
-          if (turboMode || dryNum > 0 || weedNum > 0 || insectNum > 0) {
+          // 【2026-08-15】极速务农也走快照需求筛选（与经验满/普通帮忙一致）：
+          // 快照有需求(dry/weed/insect>0)才进护主犬农场，进农场后 analyzeFriendLands 实时二次确认，
+          // 无需求不浪费 Enter。不再无条件进全部护主犬（86 人连发 Enter 压垮连接 + 白跑）。
+          if (dryNum > 0 || weedNum > 0 || insectNum > 0) {
             helpTargets.push({
               gid,
               name,
@@ -444,6 +461,19 @@ async function checkFriends(options = {}) {
               hasGuardDog: true,
             });
           }
+        }
+
+        if (helpTargets.length > TURBO_MAX_HELP_PER_ROUND) {
+          // 【2026-08-15】每轮上限 24 + 轮换起点：分批覆盖全部护主犬，
+          // 避免每轮都从排序前 24 个开始、其余永远轮不到，也避免 86 人全进压垮连接。
+          const start = turboRoundIndex % helpTargets.length;
+          const rotated = [
+            ...helpTargets.slice(start),
+            ...helpTargets.slice(0, start),
+          ];
+          helpTargets.length = 0;
+          helpTargets.push(...rotated.slice(0, TURBO_MAX_HELP_PER_ROUND));
+          turboRoundIndex++;
         }
 
         if (helpTargets.length > 0) {
@@ -520,62 +550,75 @@ async function checkFriends(options = {}) {
 
     // Help
     if (helpTargets.length > 0 && doHelp) {
+      // 【2026-08-13 修复】极速务农连接健康门控 + 自适应退避（治 Enter 超时 / 假断连）：
+      // A) 进每个好友前先 isConnected()；连续进入失败 ≥3 次立即终止本轮，把连接交还重连，
+      //    不再往已退化的管道里继续塞 Enter（否则每个干等 9~20s，pending 堆积、心跳失联）。
+      // B) 失败则好友间延迟指数退避（上限 2s），成功则回落到安全基线，避免持续高压触发限流。
+      // C) 本轮已进入失败的好友加入临时黑名单，本轮内不再重试，避免同一死 gid 反复卡住。
+      // 以下新逻辑仅 turboMode 生效，普通模式行为保持原样（100~200ms、失败跳过不中断）。
       let consecutiveEnterFailures = 0;
       let gapMin = turboMode ? 80 : 100;
       let gapMax = turboMode ? 150 : 200;
       const roundFailedGids = new Set();
-
       for (const target of helpTargets) {
-        const targetGid = toNum(target.gid);
-        if (turboMode && roundFailedGids.has(targetGid)) continue;
+        const tgid = toNum(target.gid);
+        if (turboMode && roundFailedGids.has(tgid)) continue;
+        // A) 连接已断开（ws 关闭）直接结束本轮，交还应用宝离线重连
         if (turboMode && !isConnected()) {
           logWarn('好友', 'turbo: 连接已断开，提前结束本轮护主犬巡查', {
             module: 'friend', event: 'turbo_early_exit', reason: 'disconnected',
           });
           break;
         }
-
-        // 经验满判定可能在巡逻中途触发，普通好友需实时复核。
+        // 经验满判定（detectExpFull）可能在巡逻中途触发并翻转 canGetHelpExp=false。
+        // 本轮已在开头按 helpExpReached 建好 helpTargets（含普通好友），需对每个普通好友实时复核，
+        // 否则开关触发后本轮剩余普通好友仍会被无差别帮助（表现="只帮护主犬"未生效）。
         if (!target.hasGuardDog && expLimitEnabled && !getCanGetHelpExp()) {
           continue;
         }
-
         try {
           const result = await visitFriendForHelp(
             target, tally, userState.gid, userState.accountId,
             ignoreExpLimit, helpExpReached || turboMode, turboMode
           );
+          // 帮助成功才输出日志；失败（无有效操作/异常）不打日志
           if (result && result.acted) {
             log('好友', `成功帮助${target.hasGuardDog ? '护主犬' : '好友'} ${target.name}`, {
               module: 'friend',
               event: '帮助成功',
-              gid: targetGid,
+              gid: tgid,
               hasGuardDog: !!target.hasGuardDog,
             });
           }
+          // B) 成功：失败计数清零，延迟回落基线
           if (turboMode) {
             consecutiveEnterFailures = 0;
             gapMin = Math.max(80, Math.floor(gapMin / 2));
             gapMax = Math.max(150, Math.floor(gapMax / 2));
           }
         } catch (err) {
+          // A/B) 失败：累加计数 + 本轮临时黑名单 + 指数退避，连续 3 次直接终止本轮
           if (turboMode) {
             consecutiveEnterFailures++;
-            roundFailedGids.add(targetGid);
+            roundFailedGids.add(tgid);
             logWarn('好友', `turbo: 进入 ${target.name} 农场失败 (连续 ${consecutiveEnterFailures}/3): ${err && err.message ? err.message : err}`, {
-              module: 'friend', event: 'turbo_enter_fail', gid: targetGid,
+              module: 'friend', event: 'turbo_enter_fail', gid: tgid,
             });
             gapMin = Math.min(2000, gapMin * 2);
             gapMax = Math.min(2000, gapMax * 2);
             if (consecutiveEnterFailures >= 3) {
-              logWarn('好友', 'turbo: 连续 3 次进入好友失败，提前结束本轮', {
+              logWarn('好友', 'turbo: 连续 3 次进入好友失败，提前结束本轮（交还应用宝离线重连）', {
                 module: 'friend', event: 'turbo_early_exit', reason: 'consecutive_failures',
               });
               break;
             }
           }
         }
-        await randomDelay(turboMode ? gapMin : 100, turboMode ? gapMax : 200);
+        // 【2026-08-15】对齐纯 Go 版（friendVisitDelay help=0）：turbo 帮忙模式好友间零延迟，
+        // 不再 sleep 100~200ms（24 人白等 2.4~4.8s）。普通模式保持原节奏。
+        if (!turboMode) {
+          await randomDelay(100, 200);
+        }
       }
     }
 
@@ -704,7 +747,7 @@ async function friendCheckLoop() {
   const expLimitActive = !!isAutomationOn('friend_help_exp_limit') && !getCanGetHelpExp();
   const turboMode = computeEffectiveTurbo();
   const interval = (expLimitActive || turboMode)
-    ? Math.max(6000, CONFIG.friendCheckInterval)
+    ? Math.max(10000, CONFIG.friendCheckInterval)
     : Math.max(15000, CONFIG.friendCheckInterval);
   friendScheduler.setTimeoutTask('friend_check_loop', interval, () => friendCheckLoop());
 }
@@ -745,11 +788,11 @@ function startFriendCheckLoop(opts = {}) {
 function stopFriendCheckLoop() {
   friendLoopRunning = false;
   externalSchedulerMode = false;
-  lastEffectiveTurbo = null;
-  turboFriendsListCache = null;
-  turboFriendsListCacheAt = 0;
   lastFullDogInfoRefreshAt = 0;
   dogInfoBootstrapReadyAt = 0;
+  // 【2026-08-13】清理极速务农好友列表短 TTL 缓存，避免停止后残留旧名单
+  turboFriendsListCache = null;
+  turboFriendsListCacheAt = 0;
   clearAllInvalidKnownFriendGidCooldown();
   networkEvents.off('friendApplicationReceived', onFriendApplicationReceived);
   friendScheduler.clearAll();
@@ -1117,4 +1160,5 @@ module.exports = {
   isCheckingFriendsRunning,
   clearFriendsListCache,
   syncFriendsFromGids,
+  computeEffectiveTurbo,
 };

@@ -29,27 +29,38 @@ const {
   helpWater,
   helpWeed,
   helpInsecticide,
+  helpFarming,
   stealHarvest,
   putInsectsDetailed,
   putWeedsDetailed,
 } = require('./friend-operation-limits');
 
+// ===== 超时包装 =====
+/**
+ * 给一个 Promise 加超时。超时后 reject，并吞掉原 promise 可能后来才到的 reject，
+ * 避免 unhandledRejection。原 promise 的正常 resolve/reject 仍按结果传递（未被吞）。
+ */
 function withTimeout(promise, ms, label) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error(`${label || '操作'}超时(${ms}ms)`)), ms);
   });
-  if (promise && typeof promise.catch === 'function') promise.catch(() => {});
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
+  if (promise && typeof promise.catch === 'function') {
+    promise.catch(() => { /* 吞掉超时后迟到的 reject */ });
+  }
+  return Promise.race([promise, timeout]).finally(() => { if (timer) clearTimeout(timer); });
 }
 
 // ===== Batch helper =====
 
 /**
- * Run an operation on multiple land IDs. Falls back to single-ID calls if batch fails.
+ * Run an operation on multiple land IDs. Batch-first, per-block fallback.
  * Returns the number of successful operations.
+ *
+ * 【2026-08-13 优化】批量优先：先用 batchFn 一次请求全部 landIds（单次网络往返），
+ * 批量成功即按全部计数；批量失败（服务端不支持批量/整批报错）才逐块回退精确统计。
+ * 原实现纯逐块调用（服务端对批量 land_ids 处理不可靠的顾虑），极速务农下是最大耗时源。
+ * stepDelayMs 可调（极速务农传小值，普通模式保持 50ms 节奏）。
  */
 async function runBatchWithFallback(landIds, batchFn, singleFn, opts = {}) {
   const ids = Array.isArray(landIds) ? landIds.filter(Boolean) : [];
@@ -57,14 +68,16 @@ async function runBatchWithFallback(landIds, batchFn, singleFn, opts = {}) {
   const rawDelay = opts.stepDelayMs === undefined ? 50 : Number(opts.stepDelayMs) || 0;
   const delay = Math.max(0, Math.min(rawDelay, 500));
 
+  // 1) 批量优先：一次请求全部 landIds
   try {
     await batchFn(ids);
     if (delay > 0) await sleep(delay);
     return ids.length;
-  } catch {
-    // 服务端不接受批量请求时，逐块重试并精确统计成功数。
+  } catch (batchErr) {
+    // 批量失败（可能服务端部分处理/整批报错），落到逐块回退精确统计
   }
 
+  // 2) 逐块回退：精确知道每块是否成功，统计准确。
   let ok = 0;
   for (const id of ids) {
     try {
@@ -72,6 +85,8 @@ async function runBatchWithFallback(landIds, batchFn, singleFn, opts = {}) {
       ok++;
     } catch (singleErr) {
       const msg = singleErr && singleErr.message ? singleErr.message : String(singleErr);
+      // 次数用完类错误、以及「作物当前无需该操作」类错误均静默跳过
+      // （服务端在并发帮助/状态滞后时会返回这些，属正常业务结果，无需告警刷屏）
       const silenced = ['1001046', 'used up', '1001014', '1001015', '1001018',
         '尚未干旱', '不需要除草', '不需要除虫'];
       if (!silenced.some(s => msg.includes(s))) {
@@ -688,11 +703,136 @@ async function visitFriendForSteal(friend, tally, myGid, accountId) {
  * Visit a friend specifically to help (water/weed/bug).
  * Honors experience limit. Guard dog friends bypass the limit.
  */
+
+// ===== 帮好友务农：recent-help 去重 + 批量/回退（完整对齐参考仓库）=====
+const _recentHelp = new Map();
+const _HELP_IN_FLIGHT_TTL_MS = 15000;
+const _HELP_RESULT_TTL_MS = 30000;
+const _HELP_CACHE_MAX = 2048;
+
+function _getHelpKey(hostGid, landId) {
+  return `${hostGid}:${landId}`;
+}
+
+function _pruneRecentHelp(now = Date.now()) {
+  for (const [key, entry] of _recentHelp) {
+    if (entry.expiresAt <= now) _recentHelp.delete(key);
+  }
+  while (_recentHelp.size > _HELP_CACHE_MAX) {
+    const oldestKey = _recentHelp.keys().next().value;
+    if (!oldestKey) break;
+    _recentHelp.delete(oldestKey);
+  }
+}
+
+function _getHelpSnapshotKey(lands) {
+  return (Array.isArray(lands) ? lands : []).map(land => {
+    const plant = land && land.plant;
+    const phase = plant && Array.isArray(plant.phases) ? getCurrentPhase(plant.phases) : null;
+    const weeds = (plant && Array.isArray(plant.weed_owners) ? plant.weed_owners : []).map(toNum).join(',');
+    const insects = (plant && Array.isArray(plant.insect_owners) ? plant.insect_owners : []).map(toNum).join(',');
+    return [
+      toNum(land && land.id),
+      toNum(plant && plant.id),
+      toNum(phase && phase.phase),
+      toNum(plant && plant.dry_num),
+      weeds,
+      insects,
+    ].join(':');
+  }).join('|');
+}
+
+function _filterRecentHelp(hostGid, landIds, snapshotKey) {
+  const now = Date.now();
+  _pruneRecentHelp(now);
+  return [...new Set((landIds || []).map(id => toNum(id)).filter(id => id > 0))].filter(landId => {
+    const key = _getHelpKey(hostGid, landId);
+    const entry = _recentHelp.get(key);
+    if (!entry || entry.expiresAt <= now) return true;
+    if (entry.snapshotKey !== snapshotKey) {
+      _recentHelp.delete(key);
+      return true;
+    }
+    return false;
+  });
+}
+
+function _markRecentHelp(hostGid, landIds, state, ttlMs, snapshotKey) {
+  const expiresAt = Date.now() + ttlMs;
+  for (const landId of landIds) {
+    _recentHelp.set(_getHelpKey(hostGid, landId), { state, snapshotKey, expiresAt });
+  }
+  _pruneRecentHelp();
+}
+
+function _releaseRecentHelp(hostGid, landIds) {
+  for (const landId of landIds) _recentHelp.delete(_getHelpKey(hostGid, landId));
+}
+
+function _emptyFarmingOutcome(effect = 'noop') {
+  return { effect, operationCount: 0, landCount: 0, landIds: [], operationLimits: [], code: 0 };
+}
+
+function _mergeFarmingOutcomes(outcomes) {
+  const confirmed = [];
+  let operationCount = 0;
+  for (const o of outcomes) {
+    if (o && o.effect === 'confirmed') confirmed.push(...(o.landIds || []));
+    operationCount += (o && o.operationCount) || 0;
+  }
+  const uniq = [...new Set(confirmed.map(id => toNum(id)).filter(id => id > 0))];
+  return {
+    effect: uniq.length > 0 ? 'confirmed' : 'noop',
+    operationCount,
+    landCount: uniq.length,
+    landIds: uniq,
+    operationLimits: [],
+    code: 0,
+  };
+}
+
+/** 一键务农：批量优先，失败逐块回退，recent-help 去重（对齐参考仓库 runFarmingWithFallback）。 */
+async function runFarmingWithFallback(hostGid, ids, stopWhenExpLimit, snapshotKey) {
+  const target = _filterRecentHelp(hostGid, ids, snapshotKey);
+  if (target.length === 0) return _emptyFarmingOutcome();
+  _markRecentHelp(hostGid, target, 'in_flight', _HELP_IN_FLIGHT_TTL_MS, snapshotKey);
+  try {
+    const batch = await helpFarming(hostGid, target, stopWhenExpLimit);
+    if (batch.effect === 'noop') {
+      _markRecentHelp(hostGid, target, 'noop', _HELP_RESULT_TTL_MS, snapshotKey);
+      return batch;
+    }
+    if (batch.effect === 'confirmed') {
+      _markRecentHelp(hostGid, batch.landIds, 'confirmed', _HELP_RESULT_TTL_MS, snapshotKey);
+    }
+    const unconfirmed = target.filter(landId => !batch.landIds.includes(landId));
+    _releaseRecentHelp(hostGid, unconfirmed);
+    return batch;
+  } catch (_) {
+    _releaseRecentHelp(hostGid, target);
+    const outcomes = [];
+    for (const landId of target) {
+      _markRecentHelp(hostGid, [landId], 'in_flight', _HELP_IN_FLIGHT_TTL_MS, snapshotKey);
+      try {
+        const outcome = await helpFarming(hostGid, [landId], stopWhenExpLimit);
+        outcomes.push(outcome);
+        if (outcome.effect === 'noop') _markRecentHelp(hostGid, [landId], 'noop', _HELP_RESULT_TTL_MS, snapshotKey);
+        else if (outcome.effect === 'confirmed') _markRecentHelp(hostGid, outcome.landIds, 'confirmed', _HELP_RESULT_TTL_MS, snapshotKey);
+        else _releaseRecentHelp(hostGid, [landId]);
+      } catch (_) {
+        _releaseRecentHelp(hostGid, [landId]);
+      }
+      await sleep(100);
+    }
+    return _mergeFarmingOutcomes(outcomes);
+  }
+}
+
 async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimit = false, expLimitMode = false, fastMode = false) {
   const { gid, name } = friend;
   const expLimitEnabled = !!isAutomationOn('friend_help_exp_limit');
   const checkExpLimit = expLimitEnabled && !ignoreExpLimit;
-  const hasGuardDog = !!friend.hasGuardDog;
+  let hasGuardDog = !!friend.hasGuardDog;
 
   // 仅当"经验上限开关本就关闭"时，才自由保持/恢复 canGetHelpExp=true。
   // 若开关开着却因 ignoreExpLimit 导致本次 checkExpLimit=false，绝不擅自清掉已触发的
@@ -706,24 +846,32 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
 
   let enterReply;
   try {
-    const enterPromise = enterFriendFarm(gid);
-    enterReply = fastMode
-      ? await withTimeout(enterPromise, 9000, `进入${name}农场`)
-      : await enterPromise;
+    // 【2026-08-15】对齐纯 Go 版：Enter 统一走默认超时（sendMsgAsync 20s），无 fastMode 短门限；
+    // 失败立即跳过（catch 里 return 下一个，不重试不卡）。
+    enterReply = await enterFriendFarm(gid);
   } catch (err) {
     const handled = handleFriendEnterError(gid, name, err);
     if (handled.handled) {
       return { acted: false, entered: false };
     }
-    logWarn('好友', `进入 ${name} 农场失败: ${err.message}`, {
-      module: 'friend',
-      event: '进入农场',
-      result: 'error',
-      friendName: name,
-      friendGid: gid,
-    });
-    if (fastMode) throw err;
+    if (!fastMode) {
+      logWarn('好友', `进入 ${name} 农场失败: ${err.message}`, {
+        module: 'friend',
+        event: '进入农场',
+        result: 'error',
+        friendName: name,
+        friendGid: gid,
+      });
+    }
     return { acted: false, entered: false };
+  }
+
+  // 【2026-08-15】对齐纯 Go 版 enterHasGuardDog：进农场后用 enter 实时 brief_dog_info 判定护主犬，
+  // 不再只信磁盘缓存（缓存可能滞后/为空导致误判）。
+  const enterDog = enterReply && enterReply.__briefDogInfo;
+  if (fastMode && enterDog && toNum(enterDog.dogId) > 0) {
+    hasGuardDog = toNum(enterDog.dogId) === 90021;
+    if (hasGuardDog) friend.hasGuardDog = true;
   }
 
   const lands = enterReply.lands || [];
@@ -737,74 +885,60 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
   const analysis = analyzeFriendLands(lands, myGid, name, {});
   const actionLogs = [];
 
-  const helpOptions = [
-    {
-      id: 0x2715,             // 10005 = 放虫（占位，未直接使用）
-      expIds: [0x2713],       // [10003 = 帮好友除草]
-      list: analysis.needWeed,
-      fn: helpWeed,
-      key: 'weed',
-      name: '草',
-      record: 'helpWeed',
-    },
-    {
-      id: 0x2716,             // 10006 = 放草（占位，未直接使用）
-      expIds: [0x2712],       // [10002 = 帮好友除虫]
-      list: analysis.needBug,
-      fn: helpInsecticide,
-      key: 'bug',
-      name: '虫',
-      record: 'helpBug',
-    },
-    {
-      id: 0x2717,             // 10007 = 帮好友复活（占位，未直接使用）
-      expIds: [0x2711],       // [10001 = 帮好友浇水]
-      list: analysis.needWater,
-      fn: helpWater,
-      key: 'water',
-      name: '水',
-      record: 'helpWater',
-    },
-  ];
-
   const useExpCheck = hasGuardDog ? false : checkExpLimit;
-  const stepDelayMs = fastMode ? 50 : 50;
-  const classDelayMs = fastMode ? 150 : 200;
 
-  for (const opt of helpOptions) {
-    const canGetExp = !checkExpLimit ||
+  // 【2026-08-15】完整对齐参考仓库：帮好友用 PlantService.Farming 一键务农
+  // （FarmingRequest{land_ids, host_gid, field_3:0, field_4:2}，回包 FarmingReply.results 逐地块确认，
+  //  code=1001057 静默），带 recent-help 去重 + 批量失败逐块回退，不再拆三个独立 RPC。
+  const allHelpLandIds = [...new Set([...analysis.needWeed, ...analysis.needBug, ...analysis.needWater])];
+  if (allHelpLandIds.length > 0) {
+    const allowByExp = !checkExpLimit ||
       hasGuardDog ||
-      (canGetExpByCandidates(opt.expIds) && getCanGetHelpExp());
-    if (!(opt.list.length > 0 && canGetExp))
-      continue;
-    try {
-      const okCount = await runBatchWithFallback(
-        opt.list,
-        ids => opt.fn(gid, ids, useExpCheck),
-        id => opt.fn(gid, id, useExpCheck),
-        { stepDelayMs },
-      );
-      if (okCount > 0) {
-        if (expLimitMode && hasGuardDog) {
-          const freshWeed = lands.reduce((s, l) => s + toNum(l.plant && l.plant.weed_num), 0);
-          log('好友', `[护主犬好友] ✅ ${name}: 除${opt.name}${okCount}`, {
+      (canGetExpByCandidates([0x2713, 0x2712, 0x2711]) && getCanGetHelpExp());
+    if (allowByExp) {
+      try {
+        const outcome = await runFarmingWithFallback(gid, allHelpLandIds, useExpCheck, _getHelpSnapshotKey(lands));
+        if (outcome.landCount > 0) {
+          const parts = [];
+          if (analysis.needWeed.length) parts.push(`草${analysis.needWeed.length}`);
+          if (analysis.needBug.length) parts.push(`虫${analysis.needBug.length}`);
+          if (analysis.needWater.length) parts.push(`水${analysis.needWater.length}`);
+          actionLogs.push(`一键务农${outcome.landCount}块/${outcome.operationCount}项(${parts.join('/')})`);
+          tally.weed += Math.min(analysis.needWeed.length, outcome.landCount);
+          tally.bug += Math.min(analysis.needBug.length, outcome.landCount);
+          tally.water += Math.min(analysis.needWater.length, outcome.landCount);
+          recordOperation('helpFarming', outcome.operationCount);
+          if (expLimitMode && hasGuardDog) {
+            log('好友', `[护主犬好友] ✅ ${name}: 一键务农${outcome.landCount}块(${parts.join('/')})`, {
+              module: 'friend',
+              event: '护主犬好友帮助成功',
+              friendName: name,
+              operation: 'farming',
+              count: outcome.landCount,
+            });
+          }
+        } else {
+          log('好友', `[护主犬好友] ${name}: 一键务农无效果（need ${allHelpLandIds.length} 块, 服务端确认 0）`, {
             module: 'friend',
-            event: '护主犬好友帮助成功',
+            event: '护主犬好友帮助无效果',
             friendName: name,
-            operation: opt.name,
-            count: okCount,
-            snapWeed: toNum(friend.weedNum),
-            freshWeed,
+            need: allHelpLandIds.length,
+            outcomeEffect: outcome.effect,
+            outcomeCode: outcome.code,
           });
         }
-        actionLogs.push(`${opt.name}${okCount}`);
-        tally[opt.key] += okCount;
-        recordOperation(opt.record, okCount);
+      } catch (err) {
+        logWarn('好友', `${name} 一键务农异常: ${err.message}`, {
+          module: 'friend',
+          event: '帮助好友',
+          result: 'error',
+          friendName: name,
+          friendGid: gid,
+          error: err.message,
+          code: err.code || 0,
+        });
       }
-    } catch (_) {
-      // 单个帮助操作整体失败，跳过
     }
-    if (classDelayMs > 0) await sleep(classDelayMs);
   }
 
   if (actionLogs.length > 0) {

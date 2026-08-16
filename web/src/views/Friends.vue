@@ -160,10 +160,6 @@ async function handleBatchDeleteFriends() {
     // 删除请求结束即关闭弹窗、停止 loading（不再等待整表同步）
     showDeleteModal.value = false
   }
-  // 后台静默刷新好友列表（整表 forceSync 同步较慢，不阻塞确认按钮 loading）
-  if (currentAccountId.value) {
-    friendStore.fetchFriends(currentAccountId.value, true).catch(() => {})
-  }
 }
 const expandedFriends = ref<Set<string>>(new Set())
 const currentPage = ref(1)
@@ -335,7 +331,7 @@ async function loadData() {
 
     if (acc.running) {
       avatarErrorKeys.value.clear()
-      friendStore.fetchFriends(currentAccountId.value)
+      // 【2026-08-15】好友列表只手动刷新，不再页面加载/账号切换时自动请求
       friendStore.fetchBlacklist(currentAccountId.value)
       friendStore.fetchInteractRecords(currentAccountId.value)
       if (isQqAccount.value) {
@@ -830,8 +826,7 @@ async function handleBatchAddKnownFriendGids() {
           </p>
         </div>
 
-        <template v-else>
-          <div class="flex flex-wrap items-center gap-2 rounded-lg bg-white p-3 shadow dark:bg-gray-800">
+        <div class="flex flex-wrap items-center gap-2 rounded-lg bg-white p-3 shadow dark:bg-gray-800">
             <button
               v-for="filter in dogFilters"
               :key="filter.key"
@@ -897,8 +892,8 @@ async function handleBatchAddKnownFriendGids() {
             @delete-friend="handleDeleteFriend"
             @remove-known-friend-gid="handleRemoveKnownFriendGid"
             @friend-avatar-error="handleFriendAvatarError"
+            v-if="friends.length > 0"
           />
-        </template>
       </div>
 
       <div v-else-if="activeTab === 'blacklist'" class="space-y-4">
