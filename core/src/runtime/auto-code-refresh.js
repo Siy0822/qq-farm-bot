@@ -36,38 +36,32 @@ function createAutoCodeRefreshService(deps) {
     return store.getGlobalWxConfig ? store.getGlobalWxConfig() : {};
   }
 
+  // [patched 2026-08-17] 换码源改为本地 YYB Go /wxapp/getCode。
+  // 原实现走第三方 https://code.z74d.top/api，该站已不可用（read ECONNRESET），
+  // 导致自动刷新 Code 全部失败、微信账号一天内掉线。
   async function requestFarmCode(account, wxConfig) {
-    const wxid = String(account && account.wxid || '').trim();
-    if (!wxid) throw new Error('账号缺少 wxid，无法自动刷新 Code');
+    const ref = String((account && (account.yybOpenid || account.wxid)) || '').trim();
+    if (!ref) throw new Error('账号缺少 yybOpenid/wxid，无法自动刷新 Code');
 
     const apiKey = String(wxConfig.apiKey || '').trim();
     const appId = String(wxConfig.appId || 'wx5306c5978fdb76e4').trim();
+    const rawBase = String(wxConfig.apiBase || 'http://127.0.0.1:8450').trim().replace(/\/+$/, '');
+    const base = rawBase
+      .replace(/\/wxapp\/getCode$/i, '')
+      .replace(/\/wxapp$/i, '')
+      .replace(/\/accounts$/i, '');
+    if (!base) throw new Error('应用宝接口地址未配置');
+    if (!apiKey) throw new Error('应用宝 API Token 未配置');
 
-    if (apiKey) {
-      const proxyApiUrl = String(wxConfig.proxyApiUrl || 'https://code.z74d.top/api').trim();
-      const targetUrl = `${proxyApiUrl  }?api_key=${  encodeURIComponent(apiKey)  }&action=jslogin`;
-      const response = await fetch(targetUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wxid, appid: appId }),
-      });
-      const data = await response.json();
-      if (data && data.code === 0 && data.data && data.data.code) return String(data.data.code);
-      throw new Error(data && data.msg ? data.msg : '代理获取 Code 失败');
-    }
-
-    const apiBase = String(wxConfig.apiBase || 'https://code.z74d.top/api').trim();
-    const response = await fetch(`${apiBase  }/Wxapp/JSLogin`, {
+    const response = await fetch(`${base}/wxapp/getCode`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ Wxid: wxid, Appid: appId }),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ ref, app_id: appId }),
     });
     const data = await response.json();
-    if (data && data.Success && data.Data && data.Data.code) return String(data.Data.code);
-    const msg = data && data.Data && data.Data.jsapiBaseresponse && data.Data.jsapiBaseresponse.errmsg
-      ? data.Data.jsapiBaseresponse.errmsg
-      : data && data.Message ? data.Message : '获取 Code 失败';
-    throw new Error(msg);
+    const code = data && data.data && data.data.result && data.data.result.code;
+    if (data && data.code === 0 && code) return String(code);
+    throw new Error((data && data.msg) || `应用宝获取 Code 失败 (HTTP ${response.status})`);
   }
 
   async function refreshAccountCode(accountId, reason = 'timer') {
