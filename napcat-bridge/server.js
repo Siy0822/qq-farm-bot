@@ -180,8 +180,26 @@ async function handle(req, res) {
       const data = await enqueueAuthorization(async () => {
         let cacheUin = '';
         try {
-          if (quickUin) await ensureTemporaryNapCatForUin(quickUin);
-          const profile = await getNapCatLoginProfile();
+          // 先看当前活会话。用户刚扫码登录进来的往往就是目标 QQ，此时必须直接复用这个会话。
+          // 原先无条件走 ensureTemporaryNapCatForUin()，它会先把刚扫上的会话 stop 掉，
+          // 再去 quick-login-profiles 找一份「从未被保存过」的资料 → 死循环报
+          // 「该 QQ 尚未保存快速登录资料，请先扫码授权一次」。
+          // 而那份资料只在本函数成功后的 stopTemporaryNapCat({cacheUin}) 里才会写入，
+          // 于是已存在的 QQ 账号永远无法重新授权（新账号 quickUin 为空反而能过）。
+          let profile = null;
+          try { profile = await getNapCatLoginProfile(); } catch {}
+          const liveUin = profile && profile.uin ? profile.uin : '';
+
+          if (liveUin && quickUin && liveUin !== quickUin) {
+            throw new Error(`当前扫码登录的是 QQ ${liveUin}，与目标账号 ${quickUin} 不一致`);
+          }
+          if (!liveUin) {
+            // 无活会话：走保存过的快速登录资料（无人值守刷新 Code 用）
+            if (!quickUin) throw new Error('QQ 尚未登录，请先扫码');
+            await ensureTemporaryNapCatForUin(quickUin);
+            profile = await getNapCatLoginProfile();
+          }
+
           cacheUin = profile.uin || quickUin;
           if (quickUin && profile.uin !== quickUin) throw new Error('QQ 快速登录账号不匹配');
           const authorization = await requestNapCatFarmAuthorization();
