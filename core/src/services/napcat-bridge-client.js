@@ -35,8 +35,11 @@ function requestBridge(method, path, body = null, timeoutMs = 70000) {
 }
 
 module.exports = {
-  getNapCatQrCode: () => requestBridge('GET', '/qrcode', null, 25000),
-  refreshNapCatQrCode: () => requestBridge('POST', '/refresh', {}, 30000),
+  getNapCatQrCode: () => requestBridge('GET', '/qrcode', null, 70000),
+  refreshNapCatQrCode: () => requestBridge('POST', '/refresh', {}, 70000),
+  // 无副作用：供前端 2s 轮询“扫没扫”。绝不能用 /qrcode 轮询，
+  // 否则二维码过期后每次轮询都会重启 QQ，把用户正在扫的会话反复打死。
+  getNapCatLoginStatus: () => requestBridge('GET', '/status', null, 10000),
   authorizeNapCatFarm: (uin = '') => requestBridge('POST', '/authorize', { uin }, 90000),
   checkNapCatBridge: () => requestBridge('GET', '/health', null, 5000),
 };

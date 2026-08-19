@@ -1,6 +1,7 @@
 const {
   authorizeNapCatFarm,
   checkNapCatBridge,
+  getNapCatLoginStatus,
   getNapCatQrCode,
   refreshNapCatQrCode,
 } = require('../services/napcat-bridge-client');
@@ -31,6 +32,17 @@ function registerAdminNapCatRoutes({
   app.post('/api/qr/napcat-refresh', async (_req, res) => {
     try {
       const data = await refreshNapCatQrCode();
+      res.json({ ok: true, data });
+    } catch (error) {
+      res.status(502).json({ ok: false, error: error.message });
+    }
+  });
+
+  // 前端 2s 轮询“扫没扫”走这个无副作用接口，不能用 /napcat-login：
+  // 后者会在二维码过期时重启 QQ，把用户正在扫的会话反复打死。
+  app.get('/api/qr/napcat-poll', async (_req, res) => {
+    try {
+      const data = await getNapCatLoginStatus();
       res.json({ ok: true, data });
     } catch (error) {
       res.status(502).json({ ok: false, error: error.message });

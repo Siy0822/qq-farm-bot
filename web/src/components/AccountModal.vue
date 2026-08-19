@@ -117,13 +117,21 @@ const { pause: stopQqCheck, resume: startQqCheck } = useIntervalFn(async () => {
   if (!qqWaitingForScan.value || activeTab.value !== 'qq' || loading.value)
     return
   try {
-    const { data } = await api.get('/api/qr/napcat-login')
-    if (data?.data?.loggedIn) {
+    // 轮询必须走无副作用的 napcat-poll：用 napcat-login 会在二维码过期时
+    // 重启 QQ，把用户正在扫的会话反复打死。
+    const { data } = await api.get('/api/qr/napcat-poll')
+    const result = data?.data || {}
+    if (result.loggedIn) {
       stopQqCheck()
       qqWaitingForScan.value = false
       qqQrCode.value = ''
       await authorizeViaNapCat()
+      return
     }
+    // 二维码已过期（QQ 码约 2 分钟失效，NapCat 不自动轮换）：
+    // 主动换一张，不让用户盯着死码扫。
+    if (result.stale && !qqQrLoading.value)
+      await loadNapCatQRCode(true)
   }
   catch {
     // 扫码等待期间保持轮询；显式刷新时会展示错误。
