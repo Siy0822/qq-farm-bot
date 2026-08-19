@@ -14,7 +14,13 @@ const {
 } = require('../core/src/services/napcat-openauth');
 
 const SOCKET_PATH = process.env.NAPCAT_BRIDGE_SOCKET || '/run/qqfarm-napcat-bridge.sock';
-const QR_PATH = process.env.NAPCAT_QR_IMAGE_PATH || '/opt/napcat-docker/cache/qrcode.png';
+// QR 路径必须跟 napcat-openauth.js 用同一套推导（NAPCAT_WORKDIR/cache/qrcode.png）。
+// 曾经这里硬编码宿主布局 /opt/napcat-docker，容器里 NapCat 明明已经把二维码写到
+// /app/napcat-data/cache 了，bridge 却一直等一个不存在的文件 → 「二维码生成超时」。
+const NAPCAT_WORKDIR = process.env.NAPCAT_WORKDIR || '/opt/napcat-docker';
+const QR_PATH = process.env.NAPCAT_QR_IMAGE_PATH || path.join(NAPCAT_WORKDIR, 'cache', 'qrcode.png');
+// 冷启动要先拉起 Electron + 等网络就绪，15s 在慢盘上不够。
+const QR_TIMEOUT_MS = Number(process.env.NAPCAT_QR_TIMEOUT_MS) || 45000;
 let authorizeQueue = Promise.resolve();
 
 function enqueueAuthorization(task) {
@@ -51,7 +57,7 @@ function readBody(req) {
   });
 }
 
-async function waitForQr(timeoutMs = 15000) {
+async function waitForQr(timeoutMs = QR_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -65,7 +71,7 @@ async function waitForQr(timeoutMs = 15000) {
     } catch {}
     await new Promise(resolve => setTimeout(resolve, 250));
   }
-  throw new Error('QQ 扫码二维码生成超时');
+  throw new Error(`QQ 扫码二维码生成超时（${QR_PATH}）`);
 }
 
 async function handle(req, res) {

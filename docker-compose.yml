@@ -16,8 +16,8 @@ services:
       - qq-farm-test-logs:/app/core/data/logs
       # 应用宝 Go 服务的 SQLite 数据库持久化（跨容器重启保留已登录账号）
       - qq-farm-test-yyb-db:/usr/local/share/yyb-go/resource/db
-      # QQ 登录由宿主机 NapCat 桥接服务提供；容器仅访问 Unix Socket，不接触宿主机 systemd。
-      - /run/qqfarm-napcat-bridge:/run/qqfarm-napcat-bridge
+      # QQ 登录由同一 Compose 项目的 NapCat 容器提供，通过共享 Unix Socket 通信。
+      - qq-farm-napcat-bridge:/run/qqfarm-napcat-bridge
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - NODE_ENV=production
@@ -29,7 +29,7 @@ services:
       - YYB_API_TOKEN=${YYB_API_TOKEN:-}
       - YYB_API_KEY=${YYB_API_TOKEN:-}
       - YYB_PORT=8450
-      # 宿主机 NapCat QQ 扫码/OpenAuth 桥接 Socket
+      # Docker NapCat QQ 扫码/OpenAuth 桥接 Socket
       - NAPCAT_BRIDGE_SOCKET=/run/qqfarm-napcat-bridge/bridge.sock
       # 可选：应用宝 Web 管理页登录账密（留空则由服务使用内置默认）
       - YYB_ADMIN_USER=${YYB_ADMIN_USER:-}
@@ -47,6 +47,29 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  napcat-farm:
+    build:
+      context: .
+      dockerfile: napcat/Dockerfile
+    image: qq-farm-napcat:latest
+    container_name: qq-farm-napcat
+    restart: unless-stopped
+    volumes:
+      - qq-farm-napcat-data:/app/napcat-data
+      - qq-farm-napcat-home:/app/napcat-home
+      - qq-farm-napcat-bridge:/run/qqfarm-napcat-bridge
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - NAPCAT_WORKDIR=/app/napcat-data
+      - NAPCAT_LAUNCH_MODE=process
+      - NAPCAT_LAUNCHER=/app/napcat/launch-qq.sh
+      - NAPCAT_BRIDGE_SOCKET=/run/qqfarm-napcat-bridge/bridge.sock
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   qq-farm-test-data:
     name: qq-farm-test-data
@@ -54,3 +77,9 @@ volumes:
     name: qq-farm-test-logs
   qq-farm-test-yyb-db:
     name: qq-farm-test-yyb-db
+  qq-farm-napcat-data:
+    name: qq-farm-napcat-data
+  qq-farm-napcat-home:
+    name: qq-farm-napcat-home
+  qq-farm-napcat-bridge:
+    name: qq-farm-napcat-bridge

@@ -7,6 +7,9 @@ const {
 const {
   registerAdminGuanxingRoutes,
 } = require("./admin-guanxing-routes");
+const {
+  registerAdminQixiActivityRoutes,
+} = require("./admin-qixi-activity-routes");
 
 function registerAdminActivityRoutes({
   app,
@@ -26,6 +29,7 @@ function registerAdminActivityRoutes({
   registerAdminNanguaActivityRoutes(routeContext);
   registerAdminHeluActivityRoutes(routeContext);
   registerAdminGuanxingRoutes(routeContext);
+  registerAdminQixiActivityRoutes(routeContext);
 }
 
 module.exports = { registerAdminActivityRoutes };

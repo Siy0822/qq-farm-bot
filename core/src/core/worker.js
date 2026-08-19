@@ -1044,6 +1044,26 @@ async function handleApiCall(msg) {
                 result = await brewAndSellQingmeiWine(args[0] || {});
                 break;
             }
+            case 'getQixiActivity': {
+                const { getQixiActivity } = require('../services/qixi');
+                result = await getQixiActivity();
+                break;
+            }
+            case 'sprayQixiLu': {
+                const { sprayQixiLu } = require('../services/qixi');
+                result = await sprayQixiLu(args[0] || {});
+                break;
+            }
+            case 'buildQixiBridge': {
+                const { buildQixiBridge } = require('../services/qixi');
+                result = await buildQixiBridge(args[0] || {});
+                break;
+            }
+            case 'giftQixiSachet': {
+                const { giftQixiSachet } = require('../services/qixi');
+                result = await giftQixiSachet(args[0]);
+                break;
+            }
             case 'getIllustratedList': {
                 const { getIllustratedListV2 } = require('../services/illustrated');
                 result = await getIllustratedListV2(args[0], args[1]);

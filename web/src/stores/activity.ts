@@ -245,6 +245,51 @@ export interface GuanxingActivity {
   warning?: string
 }
 
+export interface QixiTier {
+  tier: number
+  consume: number
+  claimed: boolean
+  claimable?: boolean
+  flag?: number
+  rewards: HeluDrawReward[]
+}
+
+export interface QixiTipsSection {
+  title: string
+  items: string[]
+}
+
+export interface QixiActivity {
+  uid: string
+  title: string
+  activityId: number
+  mainActivityId: number
+  sideActivityId: number
+  bridgeCommand: number
+  giftCommand: number
+  startTime: number
+  endTime: number
+  nowTime: number
+  available: boolean
+  status?: number
+  feather: number
+  sachet: number
+  luStock: number
+  items: {
+    feather?: HeluDrawReward
+    sachet?: HeluDrawReward
+    lu?: HeluDrawReward
+  }
+  tiers: QixiTier[]
+  nextTier?: QixiTier | null
+  bridgeTarget: number
+  claimableTierCount: number
+  claimedTierCount: number
+  passiveLimit: number
+  tips?: { title: string, sections: QixiTipsSection[] } | null
+  warning?: string
+}
+
 export const useActivityStore = defineStore('activity', () => {
   const heluActivity = ref<HeluActivityData | null>(null)
 
@@ -263,7 +308,15 @@ export const useActivityStore = defineStore('activity', () => {
   const guanxingClaimLoading = ref(false)
   const guanxingError = ref('')
 
+  const qixiActivity = ref<QixiActivity | null>(null)
+  const qixiLoading = ref(false)
+  const qixiSprayLoading = ref(false)
+  const qixiBridgeLoading = ref(false)
+  const qixiGiftLoading = ref(false)
+  const qixiError = ref('')
+
   let heluRequestId = 0
+  let qixiRequestId = 0
 
   function clearActivityData() {
     heluActivity.value = null
@@ -279,6 +332,12 @@ export const useActivityStore = defineStore('activity', () => {
     guanxingLoading.value = false
     guanxingClaimLoading.value = false
     guanxingError.value = ''
+    qixiActivity.value = null
+    qixiLoading.value = false
+    qixiSprayLoading.value = false
+    qixiBridgeLoading.value = false
+    qixiGiftLoading.value = false
+    qixiError.value = ''
   }
 
   function isCurrentAccount(accountId: string) {
@@ -491,6 +550,84 @@ export const useActivityStore = defineStore('activity', () => {
     }
   }
 
+  // ========== 鹊桥寄情（七夕） ==========
+  async function fetchQixiActivity(accountId: string) {
+    if (!accountId)
+      return
+    const requestedId = String(accountId)
+    const requestId = ++qixiRequestId
+    qixiLoading.value = true
+    qixiError.value = ''
+    try {
+      const { data } = await api.get('/api/activity/qixi', {
+        headers: { 'x-account-id': accountId },
+      })
+      if (requestId !== qixiRequestId || !isCurrentAccount(requestedId))
+        return
+      if (data.ok)
+        qixiActivity.value = data.activity || null
+      else
+        qixiError.value = data.error || '获取鹊桥寄情失败'
+      return data
+    }
+    catch (err: any) {
+      if (requestId === qixiRequestId && isCurrentAccount(requestedId))
+        qixiError.value = err.message || '获取鹊桥寄情失败'
+    }
+    finally {
+      if (requestId === qixiRequestId)
+        qixiLoading.value = false
+    }
+  }
+
+  async function sprayQixiLu(accountId: string, payload: { hostGid?: number, count?: number } = {}) {
+    const requestedId = String(accountId)
+    qixiSprayLoading.value = true
+    try {
+      const { data } = await api.post('/api/activity/qixi/spray', payload, {
+        headers: { 'x-account-id': accountId },
+      })
+      if (isCurrentAccount(requestedId) && data.ok && data.activity)
+        qixiActivity.value = data.activity
+      return data
+    }
+    finally {
+      qixiSprayLoading.value = false
+    }
+  }
+
+  async function buildQixiBridge(accountId: string, payload: { all?: boolean } = {}) {
+    const requestedId = String(accountId)
+    qixiBridgeLoading.value = true
+    try {
+      const { data } = await api.post('/api/activity/qixi/bridge', payload, {
+        headers: { 'x-account-id': accountId },
+      })
+      if (isCurrentAccount(requestedId) && data.ok && data.activity)
+        qixiActivity.value = data.activity
+      return data
+    }
+    finally {
+      qixiBridgeLoading.value = false
+    }
+  }
+
+  async function giftQixiSachet(accountId: string, hostGid: number) {
+    const requestedId = String(accountId)
+    qixiGiftLoading.value = true
+    try {
+      const { data } = await api.post('/api/activity/qixi/gift', { hostGid }, {
+        headers: { 'x-account-id': accountId },
+      })
+      if (isCurrentAccount(requestedId) && data.ok && data.activity)
+        qixiActivity.value = data.activity
+      return data
+    }
+    finally {
+      qixiGiftLoading.value = false
+    }
+  }
+
   return {
     heluActivity,
     heluLoading,
@@ -505,6 +642,12 @@ export const useActivityStore = defineStore('activity', () => {
     guanxingLoading,
     guanxingClaimLoading,
     guanxingError,
+    qixiActivity,
+    qixiLoading,
+    qixiSprayLoading,
+    qixiBridgeLoading,
+    qixiGiftLoading,
+    qixiError,
     clearActivityData,
     fetchHeluActivity,
     drawHelu,
@@ -515,5 +658,9 @@ export const useActivityStore = defineStore('activity', () => {
     brewAndSellQingmeiWine,
     fetchGuanxingActivity,
     claimGuanxingRewards,
+    fetchQixiActivity,
+    sprayQixiLu,
+    buildQixiBridge,
+    giftQixiSachet,
   }
 })

@@ -2,16 +2,24 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const process = require('node:process');
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const fetch = require('node-fetch');
 
 const NAPCAT_FARM_APP_ID = '1112386029';
 const NAPCAT_OPEN_AUTH_ACTION = `start_mini_app_${NAPCAT_FARM_APP_ID}`;
 const NAPCAT_SYSTEMD_UNIT = 'napcat-shell.service';
-const NAPCAT_QR_IMAGE_PATH = '/opt/napcat-docker/cache/qrcode.png';
-const NAPCAT_PID_FILE = '/run/qqfarm-napcat.pid';
-const NAPCAT_SESSION_HOME = '/opt/napcat-docker/session-home';
-const NAPCAT_QUICK_LOGIN_ROOT = '/opt/napcat-docker/quick-login-profiles';
+// All NapCat state lives under one root so the same code can run against the
+// host layout (/opt/napcat-docker) or a container volume (/app/napcat-data).
+const NAPCAT_WORKDIR = String(process.env.NAPCAT_WORKDIR || '/opt/napcat-docker');
+const NAPCAT_CONFIG_DIR = path.join(NAPCAT_WORKDIR, 'config');
+const NAPCAT_QR_IMAGE_PATH = process.env.NAPCAT_QR_IMAGE_PATH || path.join(NAPCAT_WORKDIR, 'cache', 'qrcode.png');
+const NAPCAT_PID_FILE = process.env.NAPCAT_PID_FILE || '/run/qqfarm-napcat.pid';
+const NAPCAT_SESSION_HOME = path.join(NAPCAT_WORKDIR, 'session-home');
+const NAPCAT_QUICK_LOGIN_ROOT = path.join(NAPCAT_WORKDIR, 'quick-login-profiles');
+// 'systemd' drives the host user unit (legacy layout). 'process' spawns the
+// launcher directly, which is what the container uses since it has no systemd.
+const NAPCAT_LAUNCH_MODE = String(process.env.NAPCAT_LAUNCH_MODE || 'systemd').toLowerCase();
+const NAPCAT_LAUNCHER = String(process.env.NAPCAT_LAUNCHER || '');
 const USER_SYSTEMD_ENV = {
     ...process.env,
     XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || '/run/user/0',
@@ -37,13 +45,79 @@ async function runUserSystemctl(args) {
     return runCommand('/bin/systemctl', ['--user', ...args], { env: USER_SYSTEMD_ENV });
 }
 
+function readLauncherPid() {
+    try {
+        const pid = Number(String(fs.readFileSync(NAPCAT_PID_FILE, 'utf8')).trim());
+        return Number.isInteger(pid) && pid > 1 ? pid : 0;
+    } catch (_) {
+        return 0;
+    }
+}
+
+function isLauncherPidAlive(pid) {
+    if (!pid) return false;
+    try {
+        // Confirm the PID is still our QQ launcher and not a recycled unrelated
+        // process before reporting busy or sending any signal to it.
+        const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ');
+        return /(^|[\s/])qq(\s|$)/.test(cmdline) || cmdline.includes('launch-qq.sh');
+    } catch (_) {
+        return false;
+    }
+}
+
 async function isTemporaryNapCatServiceActive() {
+    if (NAPCAT_LAUNCH_MODE === 'process') return isLauncherPidAlive(readLauncherPid());
     try {
         await runUserSystemctl(['is-active', '--quiet', NAPCAT_SYSTEMD_UNIT]);
         return true;
     } catch (_) {
         return false;
     }
+}
+
+async function startLauncherProcess() {
+    if (!NAPCAT_LAUNCHER) throw new Error('NAPCAT_LAUNCHER is not configured');
+    fs.mkdirSync(path.join(NAPCAT_WORKDIR, 'logs'), { recursive: true });
+    const logPath = path.join(NAPCAT_WORKDIR, 'logs', 'napcat-launcher.log');
+    const logFd = fs.openSync(logPath, 'a');
+    try {
+        const child = spawn(NAPCAT_LAUNCHER, [], {
+            detached: true,
+            stdio: ['ignore', logFd, logFd],
+            env: { ...process.env, NAPCAT_WORKDIR },
+        });
+        child.unref();
+        if (!child.pid) throw new Error('failed to spawn NapCat launcher');
+        fs.mkdirSync(path.dirname(NAPCAT_PID_FILE), { recursive: true });
+        fs.writeFileSync(NAPCAT_PID_FILE, String(child.pid));
+    } finally {
+        fs.closeSync(logFd);
+    }
+}
+
+async function stopLauncherProcess() {
+    const pid = readLauncherPid();
+    if (!isLauncherPidAlive(pid)) {
+        try { fs.unlinkSync(NAPCAT_PID_FILE); } catch (_) {}
+        return;
+    }
+    // The launcher is spawned detached, so it leads its own process group.
+    // Signalling the group reaps the Electron children too.
+    try { process.kill(-pid, 'SIGTERM'); } catch (_) {
+        try { process.kill(pid, 'SIGTERM'); } catch (_) {}
+    }
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+        if (!isLauncherPidAlive(pid)) break;
+        await sleep(250);
+    }
+    if (isLauncherPidAlive(pid)) {
+        try { process.kill(-pid, 'SIGKILL'); } catch (_) {
+            try { process.kill(pid, 'SIGKILL'); } catch (_) {}
+        }
+    }
+    try { fs.unlinkSync(NAPCAT_PID_FILE); } catch (_) {}
 }
 
 function normalizeUin(uin) {
@@ -79,7 +153,8 @@ async function startTemporaryNapCat(options = {}) {
             if (e.code !== 'ENOENT') throw e;
         }
     }
-    await runUserSystemctl(['start', NAPCAT_SYSTEMD_UNIT]);
+    if (NAPCAT_LAUNCH_MODE === 'process') await startLauncherProcess();
+    else await runUserSystemctl(['start', NAPCAT_SYSTEMD_UNIT]);
     return { started: true, starting: true, quickUin: quickUin || undefined };
 }
 
@@ -98,9 +173,13 @@ async function stopTemporaryNapCat(options = {}) {
 
     // Service-managed sessions stop cleanly. The PID fallback retires the
     // pre-existing detached launcher during this migration only.
-    try {
-        await runUserSystemctl(['stop', NAPCAT_SYSTEMD_UNIT]);
-    } catch (_) {}
+    if (NAPCAT_LAUNCH_MODE === 'process') {
+        await stopLauncherProcess();
+    } else {
+        try {
+            await runUserSystemctl(['stop', NAPCAT_SYSTEMD_UNIT]);
+        } catch (_) {}
+    }
 
     if (cacheUin && canCacheProfile) {
         try {
@@ -118,6 +197,10 @@ async function stopTemporaryNapCat(options = {}) {
     // makes a manual add-account flow show a new QR; saved per-QQ profiles are
     // retained separately above for unattended Code refreshes.
     try { fs.rmSync(NAPCAT_SESSION_HOME, { recursive: true, force: true }); } catch (_) {}
+
+    // Process mode already reaped the launcher and its group above; the legacy
+    // host-only PID sweep below must not run against a container PID namespace.
+    if (NAPCAT_LAUNCH_MODE === 'process') return { stopped: true, legacySession: false };
 
     let pid = 0;
     try { pid = Number(fs.readFileSync(NAPCAT_PID_FILE, 'utf8').trim()); } catch (_) {}
@@ -154,6 +237,8 @@ function getWebUiConfigCandidates() {
             } catch (_) {}
         }
     } catch (_) {}
+    add(path.join(NAPCAT_CONFIG_DIR, 'webui.json'));
+    add('/app/napcat/config/webui.json');
     add('/opt/napcat-shell/config/webui.json');
     add('/opt/napcat-shell.bak-20260709093049/config/webui.json');
     add('/opt/napcat-docker/config/webui.json');
@@ -202,7 +287,7 @@ async function getNapCatRuntimeOneBot() {
     // QR code while an already scanned QQ session is actually available.
     try {
         const configuredBase = new URL(String(process.env.NAPCAT_BASE_URL || 'http://127.0.0.1:3001'));
-        const configDir = '/opt/napcat-docker/config';
+        const configDir = NAPCAT_CONFIG_DIR;
         const files = fs.existsSync(configDir) ? fs.readdirSync(configDir).filter(name => /^onebot11.*\.json$/i.test(name)) : [];
         for (const name of files) {
             try {
@@ -291,7 +376,10 @@ function sleep(ms) {
 }
 
 async function requestQuickLogin(uin) {
-    const configPath = '/opt/napcat-docker/config/webui.json';
+    const configPath = getWebUiConfigCandidates().find(file => {
+        try { return fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).token; } catch (_) { return false; }
+    });
+    if (!configPath) throw new Error('NapCat WebUI config not found');
     const webUiConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     const hash = crypto.createHash('sha256').update(`${webUiConfig.token}.napcat`).digest('hex');
     const base = String(process.env.NAPCAT_WEBUI_BASE_URL || 'http://127.0.0.1:6099').replace(/\/+$/, '');

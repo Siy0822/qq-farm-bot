@@ -9,9 +9,11 @@ import HeluExchangePanel from '@/components/activity/HeluExchangePanel.vue'
 import HeluPassportPanel from '@/components/activity/HeluPassportPanel.vue'
 import HeluSolarTermsPanel from '@/components/activity/HeluSolarTermsPanel.vue'
 import QingmeiActivityPanel from '@/components/activity/QingmeiActivityPanel.vue'
+import QixiActivityPanel from '@/components/activity/QixiActivityPanel.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityStore } from '@/stores/activity'
+import { useFriendStore } from '@/stores/friend'
 import { useToastStore } from '@/stores/toast'
 import { formatGoldAmount } from '@/utils/number-format'
 
@@ -69,11 +71,14 @@ const L: ActivityLabels = {
 } as const
 
 const SHOW_QINGMEI_ACTIVITY = true
+// 鹊桥寄情（七夕，2026-08-18 ~ 08-22）
+const SHOW_QIXI_ACTIVITY = true
 // 荷风活动已于 2026-07 结束，隐藏入口（后端代码保留）
 const HELU_EXPIRED = false
 
 const accountStore = useAccountStore()
 const activityStore = useActivityStore()
+const friendStore = useFriendStore()
 const toast = useToastStore()
 
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
@@ -90,6 +95,12 @@ const {
   guanxingLoading,
   guanxingClaimLoading,
   guanxingError,
+  qixiActivity,
+  qixiLoading,
+  qixiSprayLoading,
+  qixiBridgeLoading,
+  qixiGiftLoading,
+  qixiError,
 } = storeToRefs(activityStore)
 
 // 自动领取开关：localStorage 持久化，默认开启
@@ -117,6 +128,11 @@ const solarTerms = computed(() => {
   }
 })
 const qingmeiActivity = computed(() => heluActivity.value?.qingmei || null)
+const qixiFriends = computed(() => (friendStore.friends || []).map((item: any) => ({
+  gid: Number(item.gid || item.id || 0),
+  name: item.name || item.nick || item.nickname || '',
+})).filter((item: any) => item.gid > 0))
+const qixiFriendsLoading = computed(() => !!friendStore.loading)
 
 const sectionTabs = computed<ActivitySection[]>(() => [
   { key: 'giftLotus', label: L.giftLotusTab, icon: 'i-carbon-star', count: passport.value?.claimableLevels || 0 },
@@ -126,8 +142,13 @@ const sectionTabs = computed<ActivitySection[]>(() => [
   ...(SHOW_QINGMEI_ACTIVITY
     ? [{ key: 'qingmei' as const, label: '青梅酿万金', icon: 'i-carbon-fruit-bowl', count: qingmeiActivity.value?.claimable ? 1 : 0 }]
     : []),
+  ...(SHOW_QIXI_ACTIVITY
+    ? [{ key: 'qixi' as const, label: '鹊桥寄情', icon: 'i-carbon-favorite', count: qixiActivity.value?.claimableTierCount || 0 }]
+    : []),
 ])
-const activeError = computed(() => heluError.value || (activeSection.value === 'journey' ? guanxingError.value : ''))
+const activeError = computed(() => heluError.value
+  || (activeSection.value === 'journey' ? guanxingError.value : '')
+  || (activeSection.value === 'qixi' ? qixiError.value : ''))
 const activeSubActivity = computed(() => {
   return subActivities.value.find(item => item.key === activeSection.value)
     || subActivities.value.find(item => item.key === 'giftLotus')
@@ -262,6 +283,82 @@ async function sellQingmeiWine() {
   }
 }
 
+// ===== 鹊桥寄情（七夕） =====
+async function refreshQixi() {
+  if (!currentAccountId.value)
+    return
+  await activityStore.fetchQixiActivity(currentAccountId.value)
+}
+
+async function loadQixiFriends() {
+  if (!currentAccountId.value)
+    return
+  await friendStore.fetchFriends(currentAccountId.value)
+  if (!qixiFriends.value.length)
+    toast.error('未取到好友列表，可先到好友页同步')
+}
+
+function describeRewards(rewards?: Array<{ itemName?: string, itemCount?: number }>) {
+  return (rewards || [])
+    .filter(item => item && item.itemName)
+    .map(item => `${item.itemName} × ${item.itemCount || 1}`)
+    .join('、')
+}
+
+async function sprayQixi(payload: { hostGid: number, count: number }) {
+  if (!currentAccountId.value)
+    return
+
+  const result = await activityStore.sprayQixiLu(currentAccountId.value, payload)
+  if (result?.ok) {
+    const gain = Number(result.featherGain || 0)
+    const target = payload.hostGid > 0 ? '好友农场' : '自家农场'
+    toast.success(gain > 0
+      ? `${target}喷洒 ${result.sprayed || 0} 次，获得鹊羽 × ${gain}`
+      : `${target}喷洒 ${result.sprayed || 0} 次`)
+  }
+  else {
+    toast.error(result?.error || '鹊羽灵露喷洒失败')
+  }
+}
+
+async function buildQixiBridge() {
+  if (!currentAccountId.value)
+    return
+
+  const result = await activityStore.buildQixiBridge(currentAccountId.value, { all: true })
+  if (result?.ok) {
+    if (result.claimedTiers?.length) {
+      const rewardText = describeRewards(result.rewards)
+      const tiers = result.claimedTiers.map((item: any) => `第 ${item.tier} 档`).join('、')
+      toast.success(rewardText ? `筑桥完成（${tiers}）：${rewardText}` : `筑桥完成（${tiers}）`)
+    }
+    else if (result.alreadyClaimed) {
+      toast.success('当前档位奖励已领取')
+    }
+    else {
+      toast.success('暂无可筑建的档位')
+    }
+  }
+  else {
+    toast.error(result?.error || '筑建鹊桥失败')
+  }
+}
+
+async function giftQixiSachet(payload: { hostGid: number }) {
+  if (!currentAccountId.value)
+    return
+
+  const result = await activityStore.giftQixiSachet(currentAccountId.value, payload.hostGid)
+  if (result?.ok) {
+    const friend = qixiFriends.value.find(item => item.gid === payload.hostGid)
+    toast.success(`已送出鹊羽香囊${friend?.name ? ` → ${friend.name}` : ''}`)
+  }
+  else {
+    toast.error(result?.error || '赠送鹊羽香囊失败')
+  }
+}
+
 watch(sectionTabs, (sections) => {
   if (!sections.some(section => section.key === activeSection.value))
     activeSection.value = sections[0]?.key || 'giftLotus'
@@ -269,6 +366,10 @@ watch(sectionTabs, (sections) => {
 
 // 切到观星礼录页签时加载数据，并触发一次自动领取
 watch(activeSection, (section) => {
+  if (section === 'qixi') {
+    refreshQixi()
+    return
+  }
   if (section !== 'journey')
     return
   refreshGuanxing()
@@ -282,12 +383,16 @@ watch(currentAccountId, () => {
   refreshAll()
   if (activeSection.value === 'journey')
     refreshGuanxing()
+  if (activeSection.value === 'qixi')
+    refreshQixi()
 })
 
 onMounted(() => {
   refreshAll()
   if (activeSection.value === 'journey')
     refreshGuanxing()
+  if (activeSection.value === 'qixi')
+    refreshQixi()
 })
 </script>
 
@@ -428,6 +533,22 @@ onMounted(() => {
           :sell-loading="qingmeiSellLoading"
           @claim="claimQingmei"
           @sell-wine="sellQingmeiWine"
+        />
+
+        <QixiActivityPanel
+          v-else-if="SHOW_QIXI_ACTIVITY && activeSection === 'qixi'"
+          :activity="qixiActivity"
+          :loading="qixiLoading"
+          :spray-loading="qixiSprayLoading"
+          :bridge-loading="qixiBridgeLoading"
+          :gift-loading="qixiGiftLoading"
+          :friends="qixiFriends"
+          :friends-loading="qixiFriendsLoading"
+          @refresh="refreshQixi"
+          @spray="sprayQixi"
+          @bridge="buildQixiBridge"
+          @gift="giftQixiSachet"
+          @load-friends="loadQixiFriends"
         />
 
         <ActivitySubActivityPanel

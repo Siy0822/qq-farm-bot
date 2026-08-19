@@ -178,6 +178,12 @@ function createDataProvider(deps) {
         claimQingmeiSeeds: (ref) => callWorkerApi(resolveAccountId(ref), 'claimQingmeiSeeds'),
         brewAndSellQingmeiWine: (ref, options) => callWorkerApi(resolveAccountId(ref), 'brewAndSellQingmeiWine', options || {}),
 
+        // ========== 鹊桥寄情（七夕） ==========
+        getQixiActivity: (ref) => callWorkerApi(resolveAccountId(ref), 'getQixiActivity'),
+        sprayQixiLu: (ref, options) => callWorkerApi(resolveAccountId(ref), 'sprayQixiLu', options || {}),
+        buildQixiBridge: (ref, options) => callWorkerApi(resolveAccountId(ref), 'buildQixiBridge', options || {}),
+        giftQixiSachet: (ref, hostGid) => callWorkerApi(resolveAccountId(ref), 'giftQixiSachet', hostGid),
+
         // ========== 观星礼录 ==========
         getGuanxingActivity: (ref) => callWorkerApi(resolveAccountId(ref), 'getGuanxingActivity'),
         claimGuanxingRewards: (ref) => callWorkerApi(resolveAccountId(ref), 'claimGuanxingRewards'),
