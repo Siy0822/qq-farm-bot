@@ -93,19 +93,50 @@ function createAdminRouteHelpers({ store, userStore, logger, getProvider }) {
     return message === '账号未运行' || message === 'API Timeout';
   }
 
+  function getProviderErrorDetails(err) {
+    const error = err instanceof Error ? err : new Error(String(err || '未知错误'));
+    const meta = error.meta || {};
+    const code = Number(error.code ?? meta.error_code ?? meta.code ?? 0) || 0;
+    const service = String(meta.service_name || error.service || '').trim();
+    const method = String(meta.method_name || error.method || '').trim();
+    const message = String(error.message || '未知错误');
+    const detail = [
+      code ? `code=${code}` : '',
+      service && method ? `${service}.${method}` : service || method,
+    ].filter(Boolean).join(' ');
+
+    return {
+      message,
+      code,
+      service,
+      method,
+      detail: detail ? `${detail}: ${message}` : message,
+    };
+  }
+
   function sendProviderError(res, err) {
     if (res.headersSent || res.writableEnded || res.destroyed || res.locals?.requestTimedOut)
       return;
 
-    if (isExpectedProviderError(err)) {
-      return res.json({
-        ok: false,
-        error: err.message,
-      });
-    }
-    return res.status(500).json({
+    const details = getProviderErrorDetails(err);
+    // 业务失败也返回 JSON 200：前端才能展示网关返回的真实 code/service/method，
+    // 避免被通用 HTTP 500 页面吞掉。后端同时保留完整日志供排查。
+    logger.error('业务请求失败', {
+      error: details.message,
+      code: details.code || undefined,
+      service: details.service || undefined,
+      method: details.method || undefined,
+      detail: details.detail,
+      stack: err?.stack,
+    });
+
+    return res.json({
       ok: false,
-      error: err.message,
+      error: details.detail,
+      message: details.message,
+      errorCode: details.code || null,
+      service: details.service || null,
+      method: details.method || null,
     });
   }
 
@@ -137,6 +168,7 @@ function createAdminRouteHelpers({ store, userStore, logger, getProvider }) {
     checkAccountLimit,
     checkAccountLimitInterval,
     getAdminUserMutationError,
+    getProviderErrorDetails,
     requireAdminRole,
     requireDangerConfirmation,
     requireSuperAdminRole,
