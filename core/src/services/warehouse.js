@@ -697,7 +697,10 @@ async function getBagSeeds() {
     });
   }
 
-  return Array.from(seedMap.values());
+  return Array.from(seedMap.values())
+    // 【2026-08-19】按等级降序（高等级在前），同等级按 seedId 升序；
+    // 「优先种植种子」下拉直接用这个顺序，不再按背包乱序展示
+    .sort((left, right) => (right.requiredLevel - left.requiredLevel) || (left.seedId - right.seedId));
 }
 
 // ---- ?? ----

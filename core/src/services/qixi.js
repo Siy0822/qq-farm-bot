@@ -11,10 +11,12 @@
  * - 活动树：ActivityService.GetGroup{id=2026081800}
  *   └ 2026081801 (type=15) 主玩法节点：payload 带 tips，节点级字段 112 带筑桥档位状态
  *   └ 2026081802 (type=16) 香囊/赠送相关节点
- * - 喷洒灵露：ItemService.Use，请求体 {1: corepb.Item{item_id, count, uid}, 2: {1: host_gid, 2: 9}}
+ * - 喷洒灵露：ItemService.Use，【逐地块】{1: corepb.Item{301103,1,uid}, 2: {1: host_gid, 2: LEN(varint land_id)}}
+ *   每块地一次 Use、消耗 1 瓶、+1 鹊羽；每块地每天限 1 次（重复报 1001065）
  *   （本地 itempb.UseRequest 的平铺结构对该玩法无效，故此处手工编码，避免改动既有物品使用链路）
  * - 筑建鹊桥：ActivityService.Operate{id=2026081801, cmd=25}
- * - 赠送香囊：VisitService.Enter(好友) → ActivityService.Operate{id=2026081801, cmd=26, 125:{1: 好友gid}} → Leave
+ * - 赠送香囊：VisitService.Enter(好友) → ActivityService.Operate{id=2026081802, cmd=26,
+ *   124:{1: 好友gid, 2: count}} → Leave。注意是 1802 独立节点，不是筑桥的 1801。
  */
 const protobuf = require('protobufjs/minimal');
 const { sendMsgAsync, isConnected, getUserState } = require('../utils/network');
@@ -24,6 +26,7 @@ const { getItemImageById, getItemById } = require('../config/gameConfig');
 const { createModuleLogger } = require('./logger');
 const { getBag, getBagItems } = require('./warehouse');
 const { enterFriendFarm, leaveFriendFarm } = require('./friend-api');
+const { getAllLands } = require('./farm-api');
 
 const qixiLogger = createModuleLogger('qixi');
 
@@ -35,12 +38,15 @@ const QIXI_SIDE_ACTIVITY_ID = 2026081802;   // 香囊节点
 
 const QIXI_BRIDGE_CMD = 25;                 // 筑建鹊桥
 const QIXI_GIFT_CMD = 26;                   // 赠送鹊羽香囊
-const QIXI_GIFT_EXT_FIELD = 125;            // Operate 扩展字段：赠送目标
+// 【2026-08-19 修正】赠送香囊的 Operate 扩展字段是 124（params），不是 125；
+// 且必须打到 1802 独立节点。原先用 1801+125 穷举全部失败正是这个原因。
+// 结构：{ 1: activity_id=2026081802, 2: operate_type=26, 124: { 1: friend_gid, 2: count } }
+const QIXI_GIFT_PARAMS_FIELD = 124;         // Operate 扩展字段：赠送参数 params
 
 const QIXI_FEATHER_ITEM_ID = 1024;          // 鹊羽
 const QIXI_SACHET_ITEM_ID = 1025;           // 鹊羽香囊
 const QIXI_LU_ITEM_ID = 301103;             // 鹊羽灵露
-const QIXI_SPRAY_SOURCE = 9;                // 喷洒场景标记
+const QIXI_LAND_ALREADY_SPRAYED_CODE = '1001065'; // 该地块今日已喷过（每块地限 1 次）
 
 const QIXI_BRIDGE_NODE_FIELD = 112;         // ActivityNode 上筑桥档位数据字段
 const QIXI_REWARD_REPLY_FIELD = 126;        // Operate 回包发放奖励字段
@@ -151,6 +157,18 @@ function writeMessageField(writer, field, bytes) {
   return writer;
 }
 
+/** 把整数编成裸 varint 字节（供 LEN 字段内嵌小整数用，如喷洒 land_id） */
+function varintBytes(value) {
+  const out = [];
+  let u = Math.max(0, Number(value) || 0);
+  while (u >= 0x80) {
+    out.push((u & 0x7f) | 0x80);
+    u = Math.floor(u / 128);
+  }
+  out.push(u & 0x7f);
+  return Buffer.from(out);
+}
+
 /** corepb.Item 子消息（id / count / uid） */
 function encodeCoreItem(itemId, count, uid = 0) {
   const w = protobuf.Writer.create();
@@ -206,9 +224,11 @@ async function operateQixi(cmd, options = {}) {
   writeVarintField(writer, 1, activityId);
   writeVarintField(writer, 2, Number(cmd) || 0);
   if (toNum(options.targetGid) > 0) {
-    const ext = protobuf.Writer.create();
-    writeVarintField(ext, 1, toNum(options.targetGid));
-    writeMessageField(writer, QIXI_GIFT_EXT_FIELD, ext.finish());
+    // params(124) = { 1: friend_gid, 2: count }
+    const params = protobuf.Writer.create();
+    writeVarintField(params, 1, toNum(options.targetGid));
+    writeVarintField(params, 2, Math.max(1, toNum(options.count) || 1));
+    writeMessageField(writer, QIXI_GIFT_PARAMS_FIELD, params.finish());
   }
 
   qixiLogger.info('鹊桥寄情活动操作', {
@@ -222,19 +242,54 @@ async function operateQixi(cmd, options = {}) {
   return Buffer.from(body || []);
 }
 
-/** 使用鹊羽灵露（自家 host_gid=0，好友传对方 gid） */
-async function useQixiLu(hostGid = 0, uid = 0) {
+/**
+ * 使用鹊羽灵露——【2026-08-19 修正】逐地块喷洒，每块地一次 Use、消耗 1 瓶灵露
+ * 抓包明文实锤：UseRequest = { 1: corepb.Item{301103,1,uid}, 2: { 1: host_gid, 2: LEN(varint land_id) } }
+ * 原实现把 field2.field2 写成固定 varint 9（当成「场景标记」）是错的，服务端不认地块。
+ * @param {number} hostGid 0=自家，>0=好友农场
+ * @param {number} uid 背包内灵露实例 uid
+ * @param {number} landId 目标地块 id
+ */
+async function useQixiLu(hostGid = 0, uid = 0, landId = 0) {
   assertQixiConnection('鹊羽灵露喷洒');
 
   const writer = protobuf.Writer.create();
   writeMessageField(writer, 1, encodeCoreItem(QIXI_LU_ITEM_ID, 1, uid));
   const scene = protobuf.Writer.create();
   writeVarintField(scene, 1, toNum(hostGid));
-  writeVarintField(scene, 2, QIXI_SPRAY_SOURCE);
+  // field2 是 LEN 包裹的 land_id 字节，对齐抓包 `12 01 09` / `12 01 05`
+  writeMessageField(scene, 2, varintBytes(toNum(landId)));
   writeMessageField(writer, 2, scene.finish());
 
   const { body } = await sendMsgAsync('gamepb.itempb.ItemService', 'Use', writer.finish());
   return Buffer.from(body || []);
+}
+
+/**
+ * 选出可喷洒地块：有作物的地块；合种地块（land_size>1 且有 slave）master+slaves 一起喷
+ * @param {number} hostGid 0=自家，>0=好友
+ * @param {number[]} wantLandIds 指定地块（空=全部有作物的）
+ */
+async function selectSprayLands(hostGid = 0, wantLandIds = []) {
+  const reply = await getAllLands(toNum(hostGid));
+  const want = new Set((wantLandIds || []).map(id => toNum(id)).filter(id => id > 0));
+  const selected = [];
+  for (const land of reply?.lands || []) {
+    const landId = toNum(land?.id);
+    if (landId <= 0) continue;
+    const hasCrop = !!(land?.plant && (land.plant.phases || []).length > 0);
+    if (!hasCrop) continue;
+    if (want.size > 0 && !want.has(landId)) continue;
+    selected.push(landId);
+    // 合种地块：主地块 + 从地块都要各喷一次
+    if (toNum(land?.land_size) > 1 && (land?.slave_land_ids || []).length > 0) {
+      for (const slave of land.slave_land_ids) {
+        const slaveId = toNum(slave);
+        if (slaveId > 0 && !selected.includes(slaveId)) selected.push(slaveId);
+      }
+    }
+  }
+  return selected;
 }
 
 // ---- 数据解析 ----
@@ -459,35 +514,58 @@ function isAlreadyClaimedError(err) {
 }
 
 /**
- * 喷洒鹊羽灵露
- * @param {{hostGid?: number, count?: number}} options hostGid>0 时喷好友农场，count 为连续喷洒次数
+ * 喷洒鹊羽灵露——【2026-08-19 修正】逐地块喷洒，每块地一次 Use、消耗 1 瓶灵露、+1 鹊羽
+ * 每块地每天只能喷一次（重复报 1001065，跳过继续下一块）
+ * @param {{hostGid?: number, count?: number, landIds?: number[]}} options
+ *        hostGid>0 时喷好友农场；landIds 指定地块，不传则自动选全部有作物地块；count 为最多喷几块
  */
 async function sprayQixiLu(options = {}) {
   assertQixiConnection('鹊羽灵露喷洒');
 
   const hostGid = Math.max(0, toNum(options.hostGid));
-  const requested = Math.max(1, Math.min(20, toNum(options.count) || 1));
   const before = await getQixiBagCounts();
   if (before.lu <= 0) throw new Error('鹊羽灵露库存为空，请先从每日任务/商城领取');
 
-  const times = Math.min(requested, before.lu);
   const rewards = [];
   const errors = [];
-  let sprayed = 0;
+  const sprayedLands = [];
+  let skipped = 0;
   let entered = false;
 
   try {
+    // 好友喷洒必须先进入对方农场（抓包帧序列：VisitService.Enter → ItemService.Use）
     if (hostGid > 0) {
       await enterFriendFarm(hostGid, { reason: 2 });
       entered = true;
     }
 
-    for (let i = 0; i < times; i += 1) {
-      const counts = i === 0 ? before : await getQixiBagCounts();
-      if (counts.lu <= 0) break;
+    const lands = await selectSprayLands(hostGid, options.landIds);
+    if (!lands.length) {
+      return {
+        ok: true,
+        hostGid,
+        sprayed: 0,
+        sprayedLands: [],
+        featherGain: 0,
+        rewards: [],
+        errors: [],
+        skipped: 0,
+        luLeft: before.lu,
+        message: '无可喷洒地块（无作物或未指定）',
+        activity: await getQixiActivity(),
+      };
+    }
+
+    // 上限：请求数 / 灵露库存 / 可喷地块数 三者取小
+    const requested = toNum(options.count) > 0 ? toNum(options.count) : lands.length;
+    const limit = Math.min(requested, before.lu, lands.length);
+    let luUid = before.luUid;
+
+    for (let i = 0; i < limit; i += 1) {
+      const landId = lands[i];
       try {
-        const body = await useQixiLu(hostGid, counts.luUid);
-        sprayed += 1;
+        const body = await useQixiLu(hostGid, luUid, landId);
+        sprayedLands.push(landId);
         try {
           const reply = types.UseReply.decode(body);
           for (const item of reply.items || []) {
@@ -498,13 +576,29 @@ async function sprayQixiLu(options = {}) {
           rewards.push(...parseRewardItems(body, 1));
         }
       } catch (err) {
-        errors.push(err?.message || String(err));
+        const message = err?.message || String(err);
+        // 该地块今天已喷过：跳过继续下一块，不算失败
+        if (message.includes(QIXI_LAND_ALREADY_SPRAYED_CODE)) {
+          skipped += 1;
+          continue;
+        }
+        errors.push(`land${landId}: ${message}`);
         break;
+      }
+      if (i < limit - 1) {
+        // 逐块间隔，避免密集请求触发风控
+        await sleep(300);
+        // 灵露 uid 可能随消耗变化，重新取一次
+        const counts = await getQixiBagCounts();
+        if (counts.lu <= 0) break;
+        luUid = counts.luUid;
       }
     }
   } finally {
     if (entered) await leaveFriendFarm(hostGid);
   }
+
+  const sprayed = sprayedLands.length;
 
   const after = await getQixiBagCounts();
   const featherGain = Math.max(0, after.feather - before.feather);
@@ -513,6 +607,8 @@ async function sprayQixiLu(options = {}) {
     event: 'qixi_spray',
     hostGid: hostGid || undefined,
     sprayed,
+    sprayedLands,
+    skipped: skipped || undefined,
     featherGain,
     luLeft: after.lu,
     errors: errors.length ? errors : undefined,
@@ -524,6 +620,8 @@ async function sprayQixiLu(options = {}) {
     ok: true,
     hostGid,
     sprayed,
+    sprayedLands,
+    skipped,
     featherGain,
     rewards: mergeItems(rewards),
     errors,
@@ -603,7 +701,11 @@ async function giftQixiSachet(hostGid) {
   try {
     await enterFriendFarm(gid, { reason: 2 });
     entered = true;
-    body = await operateQixi(QIXI_GIFT_CMD, { targetGid: gid });
+    body = await operateQixi(QIXI_GIFT_CMD, {
+      activityId: QIXI_SIDE_ACTIVITY_ID,
+      targetGid: gid,
+      count: 1,
+    });
   } finally {
     if (entered) await leaveFriendFarm(gid);
   }

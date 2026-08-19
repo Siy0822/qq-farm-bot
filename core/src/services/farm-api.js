@@ -29,11 +29,19 @@ async function sendPlantRequest(ReqType, ReplyType, method, landIds, hostGid) {
 // ─── 农场 API ───
 
 /** 获取所有地块数据 */
-async function getAllLands() {
-  const payload = types.AllLandsRequest.encode(types.AllLandsRequest.create({})).finish();
+/**
+ * 获取土地列表
+ * @param {number} hostGid 0/省略=自己的地块；>0=好友地块（需已 VisitService.Enter）
+ */
+async function getAllLands(hostGid = 0) {
+  const gid = Number(hostGid) || 0;
+  const payload = types.AllLandsRequest.encode(
+    types.AllLandsRequest.create(gid > 0 ? { host_gid: toLong(gid) } : {})
+  ).finish();
   const { body } = await sendMsgAsync('gamepb.plantpb.PlantService', 'AllLands', payload);
   const reply = types.AllLandsReply.decode(body);
-  if (reply.operation_limits && onOperationLimitsUpdate) {
+  // 只有自己的地块回包才带本账号操作次数限制，好友地块不覆盖本地计数
+  if (gid <= 0 && reply.operation_limits && onOperationLimitsUpdate) {
     onOperationLimitsUpdate(reply.operation_limits);
   }
   return reply;

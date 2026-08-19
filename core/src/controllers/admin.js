@@ -168,7 +168,15 @@ function configureCorsMiddleware(expressApp) {
 
 function configureStaticAssets(expressApp, webDist) {
   if (fs.existsSync(webDist)) {
-    expressApp.use(express.static(webDist));
+    // index.html 必须 no-cache：它引用带哈希的 asset，若被浏览器缓存旧版本，
+    // 前端更新后仍会加载已被删除的旧 JS → 页面功能不更新/白屏
+    expressApp.use(express.static(webDist, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith("index.html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      },
+    }));
     return;
   }
   adminLogger.warn("web build not found", { webDist });
@@ -235,6 +243,8 @@ function registerSpaFallback(expressApp, webDist) {
       });
     }
     if (fs.existsSync(webDist)) {
+      // SPA fallback 同样禁缓存，避免旧 index.html 引用已删除的 asset 哈希
+      res.setHeader("Cache-Control", "no-cache");
       return res.sendFile(path.join(webDist, "index.html"));
     }
     return res

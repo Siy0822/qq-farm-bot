@@ -617,10 +617,17 @@ async function startBot(config) {
 
     // 断线监听
     if (onDisconnectHandler) networkEvents.off('disconnect', onDisconnectHandler);
-    onDisconnectHandler = () => {
+    onDisconnectHandler = (info) => {
         if (!loginReady) return;
         loginReady = false;
-        log('系统', '连接断开，暂停自动化任务，等待重连...');
+        // 【2026-08-19】把掉线原因写进前端日志，不再只留一句「连接断开」无法定位
+        const reason = info && info.code != null ? String(info.code) : 'unknown';
+        log('系统', `连接断开 (原因: ${reason})，暂停自动化任务，等待重连...`, {
+            module: 'system',
+            event: 'disconnect',
+            result: 'warn',
+            reason,
+        });
     };
     networkEvents.on('disconnect', onDisconnectHandler);
 
