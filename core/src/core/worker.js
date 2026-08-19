@@ -1041,16 +1041,6 @@ async function handleApiCall(msg) {
                 result = await claimSolarTermsReward(args[0]);
                 break;
             }
-            case 'claimQingmeiSeeds': {
-                const { claimQingmeiSeeds } = require('../services/activity');
-                result = await claimQingmeiSeeds();
-                break;
-            }
-            case 'brewAndSellQingmeiWine': {
-                const { brewAndSellQingmeiWine } = require('../services/activity');
-                result = await brewAndSellQingmeiWine(args[0] || {});
-                break;
-            }
             case 'getQixiActivity': {
                 const { getQixiActivity } = require('../services/qixi');
                 result = await getQixiActivity();

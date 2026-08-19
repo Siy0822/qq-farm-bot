@@ -8,14 +8,12 @@ import GuanxingActivityPanel from '@/components/activity/GuanxingActivityPanel.v
 import HeluExchangePanel from '@/components/activity/HeluExchangePanel.vue'
 import HeluPassportPanel from '@/components/activity/HeluPassportPanel.vue'
 import HeluSolarTermsPanel from '@/components/activity/HeluSolarTermsPanel.vue'
-import QingmeiActivityPanel from '@/components/activity/QingmeiActivityPanel.vue'
 import QixiActivityPanel from '@/components/activity/QixiActivityPanel.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityStore } from '@/stores/activity'
 import { useFriendStore } from '@/stores/friend'
 import { useToastStore } from '@/stores/toast'
-import { formatGoldAmount } from '@/utils/number-format'
 
 const L: ActivityLabels = {
   title: '\u6D3B\u52A8\u4E2D\u5FC3',
@@ -70,7 +68,6 @@ const L: ActivityLabels = {
   activityStatus: '\u6D3B\u52A8\u72B6\u6001',
 } as const
 
-const SHOW_QINGMEI_ACTIVITY = true
 // 鹊桥寄情（七夕，2026-08-18 ~ 08-22）
 const SHOW_QIXI_ACTIVITY = true
 // 荷风活动已于 2026-07 结束，隐藏入口（后端代码保留）
@@ -88,8 +85,6 @@ const {
   exchangeLoading,
   passportClaimLoading,
   solarClaimLoading,
-  qingmeiClaimLoading,
-  qingmeiSellLoading,
   heluError,
   guanxingActivity,
   guanxingLoading,
@@ -127,7 +122,6 @@ const solarTerms = computed(() => {
     terms: (raw.terms || []).filter((t: any) => t.statusLabel !== '已结束')
   }
 })
-const qingmeiActivity = computed(() => heluActivity.value?.qingmei || null)
 const qixiFriends = computed(() => (friendStore.friends || []).map((item: any) => ({
   gid: Number(item.gid || item.id || 0),
   name: item.name || item.nick || item.nickname || '',
@@ -139,9 +133,6 @@ const sectionTabs = computed<ActivitySection[]>(() => [
   { key: 'shop', label: L.shopTab, icon: 'i-carbon-store', count: heluExchangeItems.value.length },
   { key: 'journey', label: L.journeyTab, icon: 'i-carbon-observation', count: guanxingActivity.value?.summary?.claimableCount || 0 },
   { key: 'notes', label: L.notesTab, icon: 'i-carbon-notebook', count: solarTerms.value?.claimableCount || 0 },
-  ...(SHOW_QINGMEI_ACTIVITY
-    ? [{ key: 'qingmei' as const, label: '青梅酿万金', icon: 'i-carbon-fruit-bowl', count: qingmeiActivity.value?.claimable ? 1 : 0 }]
-    : []),
   ...(SHOW_QIXI_ACTIVITY
     ? [{ key: 'qixi' as const, label: '鹊桥寄情', icon: 'i-carbon-favorite', count: qixiActivity.value?.claimableTierCount || 0 }]
     : []),
@@ -254,33 +245,6 @@ async function claimSolar(term: { id: number, title?: string }) {
     toast.success(`节令小札领取完成：${term.title || term.id}`)
   else
     toast.error(result?.error || '节令小札领取失败')
-}
-
-async function claimQingmei() {
-  if (!currentAccountId.value)
-    return
-
-  const result = await activityStore.claimQingmeiSeeds(currentAccountId.value)
-  if (result?.ok && result.alreadyClaimed)
-    toast.success('今日已领取青梅种子')
-  else if (result?.ok)
-    toast.success(`已领取青梅种子 × ${result.claimedCount || 24}`)
-  else
-    toast.error(result?.error || '青梅种子领取失败')
-}
-
-async function sellQingmeiWine() {
-  if (!currentAccountId.value)
-    return
-
-  const result = await activityStore.brewAndSellQingmeiWine(currentAccountId.value)
-  if (result?.ok) {
-    const gold = Number(result.sell?.gold || result.sell?.item?.itemCount || 0)
-    toast.success(gold > 0 ? `青梅酿售卖完成，获得金币 ${formatGoldAmount(gold)}` : '青梅酿售卖完成')
-  }
-  else {
-    toast.error(result?.error || '青梅酿售卖失败')
-  }
 }
 
 // ===== 鹊桥寄情（七夕） =====
@@ -524,15 +488,6 @@ onMounted(() => {
           :loading="solarClaimLoading"
           :labels="L"
           @claim="claimSolar"
-        />
-
-        <QingmeiActivityPanel
-          v-else-if="SHOW_QINGMEI_ACTIVITY && activeSection === 'qingmei'"
-          :activity="qingmeiActivity"
-          :loading="qingmeiClaimLoading"
-          :sell-loading="qingmeiSellLoading"
-          @claim="claimQingmei"
-          @sell-wine="sellQingmeiWine"
         />
 
         <QixiActivityPanel

@@ -99,44 +99,6 @@ export interface HeluSolarTerms {
 
 export type HeluSubActivityKey = 'giftLotus' | 'shop' | 'journey' | 'notes'
 
-export interface QingmeiActivity {
-  uid: string
-  title: string
-  activityId: number
-  claimActivityId: number
-  claimCommand: number
-  wineActivityId?: number
-  wineTitle?: string
-  winePreviewCommand?: number
-  wineBrewCommand?: number
-  wineSellCommand?: number
-  startTime?: number
-  endTime?: number
-  claimStartTime?: number
-  claimEndTime?: number
-  claimWindowState?: 'open' | 'pending' | 'ended'
-  claimUnavailableReason?: string
-  status?: number
-  claimed: boolean
-  claimable: boolean
-  reward: HeluDrawReward
-  material?: HeluDrawReward
-  warning?: string
-}
-
-export interface QingmeiBrewResult {
-  wineType: number
-  cost: number
-  price: number
-  canDouble: boolean
-}
-
-export interface QingmeiSellResult {
-  multiple: number
-  gold: number
-  item?: HeluDrawReward
-}
-
 export interface HeluSubActivity {
   key: HeluSubActivityKey
   id: number
@@ -187,7 +149,6 @@ export interface HeluActivityData {
   subActivities: HeluSubActivity[]
   passport?: HeluSeasonPassport | null
   solarTerms?: HeluSolarTerms | null
-  qingmei?: QingmeiActivity | null
   heluBalance: number
   lastDrawResult?: HeluDrawResult | null
   warning?: string
@@ -298,8 +259,6 @@ export const useActivityStore = defineStore('activity', () => {
   const exchangeLoading = ref(false)
   const passportClaimLoading = ref(false)
   const solarClaimLoading = ref(false)
-  const qingmeiClaimLoading = ref(false)
-  const qingmeiSellLoading = ref(false)
 
   const heluError = ref('')
 
@@ -325,8 +284,6 @@ export const useActivityStore = defineStore('activity', () => {
     exchangeLoading.value = false
     passportClaimLoading.value = false
     solarClaimLoading.value = false
-    qingmeiClaimLoading.value = false
-    qingmeiSellLoading.value = false
     heluError.value = ''
     guanxingActivity.value = null
     guanxingLoading.value = false
@@ -440,67 +397,6 @@ export const useActivityStore = defineStore('activity', () => {
     }
     finally {
       solarClaimLoading.value = false
-    }
-  }
-
-  async function claimQingmeiSeeds(accountId: string) {
-    const requestedId = String(accountId)
-    qingmeiClaimLoading.value = true
-    try {
-      const { data } = await api.post('/api/activity/qingmei/claim', {}, {
-        headers: { 'x-account-id': accountId },
-      })
-      if (isCurrentAccount(requestedId) && data.ok && data.activity) {
-        heluActivity.value = data.activity
-        if (heluActivity.value?.qingmei) {
-          heluActivity.value.qingmei.claimed = true
-          heluActivity.value.qingmei.claimable = false
-        }
-      }
-      else if (isCurrentAccount(requestedId) && data.ok && data.qingmei && heluActivity.value) {
-        heluActivity.value.qingmei = {
-          ...data.qingmei,
-          claimed: true,
-          claimable: false,
-        }
-      }
-      // 领取窗口已关闭：服务端会回传最新活动数据，用它刷新面板并保持按钮禁用
-      else if (isCurrentAccount(requestedId) && !data.ok && data.claimWindowClosed) {
-        if (data.activity) {
-          heluActivity.value = data.activity
-        }
-        else if (data.qingmei && heluActivity.value) {
-          heluActivity.value.qingmei = data.qingmei
-        }
-        if (heluActivity.value?.qingmei) {
-          heluActivity.value.qingmei.claimable = false
-          heluActivity.value.qingmei.claimWindowState = data.claimWindowState || 'ended'
-          heluActivity.value.qingmei.claimUnavailableReason
-            = heluActivity.value.qingmei.claimUnavailableReason || data.error
-        }
-      }
-      return data
-    }
-    finally {
-      qingmeiClaimLoading.value = false
-    }
-  }
-
-  async function brewAndSellQingmeiWine(accountId: string) {
-    const requestedId = String(accountId)
-    qingmeiSellLoading.value = true
-    try {
-      const { data } = await api.post('/api/activity/qingmei/wine/sell', {
-        share: true,
-      }, {
-        headers: { 'x-account-id': accountId },
-      })
-      if (isCurrentAccount(requestedId) && data.ok && data.activity)
-        heluActivity.value = data.activity
-      return data
-    }
-    finally {
-      qingmeiSellLoading.value = false
     }
   }
 
@@ -635,8 +531,6 @@ export const useActivityStore = defineStore('activity', () => {
     exchangeLoading,
     passportClaimLoading,
     solarClaimLoading,
-    qingmeiClaimLoading,
-    qingmeiSellLoading,
     heluError,
     guanxingActivity,
     guanxingLoading,
@@ -654,8 +548,6 @@ export const useActivityStore = defineStore('activity', () => {
     exchangeHelu,
     claimHeluPassport,
     claimHeluSolar,
-    claimQingmeiSeeds,
-    brewAndSellQingmeiWine,
     fetchGuanxingActivity,
     claimGuanxingRewards,
     fetchQixiActivity,

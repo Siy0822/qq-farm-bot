@@ -1,6 +1,6 @@
 import type { ActivityExchangeShopItem } from '@/stores/activity'
 
-export type ActivitySectionKey = 'giftLotus' | 'shop' | 'journey' | 'notes' | 'qingmei' | 'qixi'
+export type ActivitySectionKey = 'giftLotus' | 'shop' | 'journey' | 'notes' | 'qixi'
 
 export interface ActivitySection {
   key: ActivitySectionKey

@@ -1815,7 +1815,6 @@ async function getHeluActivity() {
         currentTerm: null,
       },
       summary: { rewardPoolCount: 0, subActivityCount: HELU_SUB_ACTIVITY_DEFS.length },
-      qingmei: await getQingmeiActivity(),
       warning: 'runtime connection is not open',
     };
   }
@@ -1847,7 +1846,6 @@ async function getHeluActivity() {
       warning: err?.message || String(err),
     };
   }
-  activity.qingmei = await getQingmeiActivity();
   return activity;
 }
 
@@ -2421,15 +2419,11 @@ async function claimGuanxingRewards() {
 module.exports = {
   NANGUA_ACTIVITY_UID,
   HELU_ACTIVITY_UID,
-  QINGMEI_ACTIVITY_UID,
   NANGUA_SHOP_ACTIVITY_ID,
   NANGUA_RANDOM_SHOP_ACTIVITY_ID,
   HELU_ACTIVITY_ID,
   HELU_DRAW_ACTIVITY_ID,
   HELU_EXCHANGE_ACTIVITY_ID,
-  QINGMEI_ACTIVITY_ID,
-  QINGMEI_SEED_CLAIM_ACTIVITY_ID,
-  QINGMEI_WINE_ACTIVITY_ID,
   GUANXING_ACTIVITY_ID,
   GUANXING_CLAIM_CMD,
   STARSAND_ITEM_ID,
@@ -2441,9 +2435,6 @@ module.exports = {
   getActivityGroup,
   getNanguaShop,
   getHeluActivity,
-  getQingmeiActivity,
-  claimQingmeiSeeds,
-  brewAndSellQingmeiWine,
   getSeasonPassport,
   claimSeasonPassportRewards,
   getSolarTermsInfo,

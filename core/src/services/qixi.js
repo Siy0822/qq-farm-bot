@@ -48,6 +48,21 @@ const QIXI_SACHET_ITEM_ID = 1025;           // 鹊羽香囊
 const QIXI_LU_ITEM_ID = 301103;             // 鹊羽灵露
 const QIXI_LAND_ALREADY_SPRAYED_CODE = '1001065'; // 该地块今日已喷过（每块地限 1 次）
 
+const QIXI_BRIDGE_CONSUMES = [30, 50, 77]; // Go 上游固定三档：不是 tier 消息 field2/3
+const QIXI_BRIDGE_REWARDS = [
+  [
+    { id: 1025, name: '鹊羽香囊', count: 5 },
+    { id: 101325, name: '鹊桥寄情礼包一', count: 1 },
+  ],
+  [
+    { id: 101326, name: '鹊桥寄情礼包二', count: 1 },
+    { id: 1025, name: '鹊羽香囊', count: 5 },
+  ],
+  [
+    { id: 401004, name: '鹊桥寄情铭牌', count: 1 },
+  ],
+];
+
 const QIXI_BRIDGE_NODE_FIELD = 112;         // ActivityNode 上筑桥档位数据字段
 const QIXI_REWARD_REPLY_FIELD = 126;        // Operate 回包发放奖励字段
 
@@ -371,45 +386,37 @@ function findActivityNodes(rawBody) {
 
 /**
  * 解析筑桥档位。
- * node.112 = {2: repeated tier{1: 档号, 2: 消耗鹊羽, 4: 状态(2=已领取), ...奖励}}
- * 奖励物品字段号在不同档位可能变化，这里对档位子消息做一次深度扫描收集 item{1:id,2:count}
+ *
+ * Go 上游（Aoluis1005/QQ-farm-BOT-GO）当前实现只从：
+ *   node.field112.field2 repeated tier{field1=档号, field4=状态}
+ * 读取档号和领取状态；三档消耗不是 tier.field2/field3，而是活动固定值 30/50/77。
+ * Node 版此前误把 field2/3 当 consume，恰好它们是 LEN/其它字段，fieldNum 读不到，
+ * 所以前端三档一直显示 0，buildQixiBridge 也因 next.consume>0 不成立而完全不发 Operate。
  */
 function parseBridgeTiers(nodeEntries) {
+  // Go 上游无论 field112 是否返回，都会固定构造三档；field112 只提供领取状态。
+  // 服务端有时会省略配置块/未领取档位，所以这里也必须先构造 30/50/77 三档。
+  const flags = new Map();
   const configBytes = fieldBytes(nodeEntries || [], QIXI_BRIDGE_NODE_FIELD);
-  if (!configBytes) return [];
+  if (configBytes) {
+    for (const tierBytes of fieldBytesAll(readFields(configBytes), 2)) {
+      const entries = readFields(tierBytes);
+      const tier = fieldNum(entries, 1);
+      if (tier > 0) flags.set(tier, fieldNum(entries, 4, 1));
+    }
+  }
 
-  const tiers = [];
-  for (const tierBytes of fieldBytesAll(readFields(configBytes), 2)) {
-    const entries = readFields(tierBytes);
-    const tier = fieldNum(entries, 1);
-    if (tier <= 0) continue;
-    const flag = fieldNum(entries, 4);
-    const consume = fieldNum(entries, 2) || fieldNum(entries, 3);
-
-    const rewards = [];
-    const collect = (bytes, depth) => {
-      if (!bytes || depth > 3) return;
-      for (const entry of readFields(bytes)) {
-        if (entry.wire !== 2) continue;
-        const sub = readFields(entry.value);
-        const id = fieldNum(sub, 1);
-        const count = fieldNum(sub, 2);
-        const looksLikeItem = id > 0 && count > 0 && sub.every(e => e.wire === 0 || e.field >= 6);
-        if (looksLikeItem) rewards.push(normalizeItem(id, count));
-        else collect(entry.value, depth + 1);
-      }
-    };
-    collect(tierBytes, 0);
-
-    tiers.push({
+  return QIXI_BRIDGE_CONSUMES.map((consume, index) => {
+    const tier = index + 1;
+    const flag = flags.get(tier) || 1;
+    return {
       tier,
       consume,
       claimed: flag === 2,
       flag,
-      rewards: mergeItems(rewards),
-    });
-  }
-  return tiers.sort((a, b) => a.tier - b.tier);
+      rewards: (QIXI_BRIDGE_REWARDS[index] || []).map(item => normalizeItem(item.id, item.count)),
+    };
+  });
 }
 
 async function getQixiBagCounts() {
@@ -556,12 +563,14 @@ async function sprayQixiLu(options = {}) {
       };
     }
 
-    // 上限：请求数 / 灵露库存 / 可喷地块数 三者取小
+    // requested 表示希望成功喷洒的地块数，不是只尝试前 N 块。
+    // 前面的地块可能今天已喷过（1001065）；必须继续遍历后续候选地块，
+    // 直到成功数达到 requested / 灵露耗尽 / 候选地块遍历完。
     const requested = toNum(options.count) > 0 ? toNum(options.count) : lands.length;
-    const limit = Math.min(requested, before.lu, lands.length);
+    const targetSuccesses = Math.min(requested, before.lu, lands.length);
     let luUid = before.luUid;
 
-    for (let i = 0; i < limit; i += 1) {
+    for (let i = 0; i < lands.length && sprayedLands.length < targetSuccesses; i += 1) {
       const landId = lands[i];
       try {
         const body = await useQixiLu(hostGid, luUid, landId);
@@ -580,12 +589,13 @@ async function sprayQixiLu(options = {}) {
         // 该地块今天已喷过：跳过继续下一块，不算失败
         if (message.includes(QIXI_LAND_ALREADY_SPRAYED_CODE)) {
           skipped += 1;
+          // Go 上游逐块喷洒；该块已喷不应结束，继续尝试下一块。
           continue;
         }
         errors.push(`land${landId}: ${message}`);
         break;
       }
-      if (i < limit - 1) {
+      if (sprayedLands.length < targetSuccesses && i < lands.length - 1) {
         // 逐块间隔，避免密集请求触发风控
         await sleep(300);
         // 灵露 uid 可能随消耗变化，重新取一次

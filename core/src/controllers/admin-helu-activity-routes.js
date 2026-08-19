@@ -3,31 +3,6 @@ const {
   requireConnectedAccount,
 } = require("./admin-activity-route-helpers");
 
-function isQingmeiClaimAlreadyHandledError(err) {
-  const message = String(err?.message || err || "");
-  return message.includes("已领�?")
-    || message.includes("已经领取")
-    || message.includes("重复领取")
-    || message.includes("already");
-}
-
-function isQingmeiClaimClosedError(err) {
-  const message = String(err?.message || err || "");
-  return !!err?.qingmeiClaimClosed
-    || message.includes("1034001")
-    || message.includes("活动未开始")
-    || message.includes("领取已于")
-    || message.includes("尚未开始");
-}
-
-function isQingmeiWineBusinessError(err) {
-  const message = String(err?.message || err || "");
-  return !!err?.qingmeiWine
-    || message.includes("青梅�?")
-    || message.includes("ActivityService.Operate")
-    || message.includes("ShareService");
-}
-
 function registerAdminHeluActivityRoutes({
   app,
   provider,
@@ -79,7 +54,7 @@ function registerAdminHeluActivityRoutes({
     if (!accountId) return;
 
     try {
-      if (!requireConnectedAccount(res, provider, accountId, "获取奇遇礼莲失败: 账号未运�?"))
+      if (!requireConnectedAccount(res, provider, accountId, "获取奇遇礼莲失败: 账号未运�?"))
         return;
 
       const activity = await provider.getHeluActivity(accountId);
@@ -97,7 +72,7 @@ function registerAdminHeluActivityRoutes({
     if (!accountId) return;
 
     try {
-      if (!requireConnectedAccount(res, provider, accountId, "奇遇礼莲抽奖失败: 账号未运�?"))
+      if (!requireConnectedAccount(res, provider, accountId, "奇遇礼莲抽奖失败: 账号未运�?"))
         return;
 
       const result = await provider.drawHeluGiftLotus(accountId, req.body || {});
@@ -115,7 +90,7 @@ function registerAdminHeluActivityRoutes({
     if (!accountId) return;
 
     try {
-      if (!requireConnectedAccount(res, provider, accountId, "荷风游记领取失败: 账号未运�?"))
+      if (!requireConnectedAccount(res, provider, accountId, "荷风游记领取失败: 账号未运�?"))
         return;
 
       const result = await provider.claimSeasonPassportRewards(accountId);
@@ -135,7 +110,7 @@ function registerAdminHeluActivityRoutes({
     if (!accountId) return;
 
     try {
-      if (!requireConnectedAccount(res, provider, accountId, "节令小札领取失败: 账号未运�?"))
+      if (!requireConnectedAccount(res, provider, accountId, "节令小札领取失败: 账号未运�?"))
         return;
 
       const termId = Number(req.body?.termId) || 0;
@@ -156,7 +131,7 @@ function registerAdminHeluActivityRoutes({
     if (!accountId) return;
 
     try {
-      if (!requireConnectedAccount(res, provider, accountId, "荷露商店兑换失败: 账号未运�?"))
+      if (!requireConnectedAccount(res, provider, accountId, "荷露商店兑换失败: 账号未运�?"))
         return;
 
       const slotId = Number(req.body?.slotId) || 0;
@@ -170,103 +145,6 @@ function registerAdminHeluActivityRoutes({
         ...result,
       });
     } catch (err) {
-      sendProviderError(res, err);
-    }
-  });
-
-  app.post("/api/activity/qingmei/claim", async (req, res) => {
-    const accountId = getAuthorizedAccountId(req, res, routeContext);
-    if (!accountId) return;
-
-    try {
-      if (!requireConnectedAccount(res, provider, accountId, "领取青梅种子失败: 账号未运�?"))
-        return;
-
-      const result = await provider.claimQingmeiSeeds(accountId);
-      let activity = result.activity || null;
-      if (!activity) {
-        try {
-          activity = await provider.getHeluActivity(accountId);
-        } catch (_) {
-          activity = null;
-        }
-      }
-      res.json({
-        ok: true,
-        ...result,
-        activity,
-        qingmei: result.qingmei || activity?.qingmei || null,
-      });
-    } catch (err) {
-      if (isQingmeiClaimClosedError(err)) {
-        let closedActivity = null;
-        try {
-          closedActivity = await provider.getHeluActivity(accountId);
-        } catch (_) {
-          closedActivity = null;
-        }
-        return res.json({
-          ok: false,
-          error: err.message,
-          claimWindowClosed: true,
-          claimWindowState: err.qingmeiClaimWindowState || "ended",
-          activity: closedActivity,
-          qingmei: closedActivity?.qingmei || null,
-        });
-      }
-      if (isQingmeiClaimAlreadyHandledError(err)) {
-        let activity = null;
-        try {
-          activity = await provider.getHeluActivity(accountId);
-        } catch (_) {
-          activity = null;
-        }
-        res.json({
-          ok: true,
-          alreadyClaimed: true,
-          claimedCount: 0,
-          activity,
-          qingmei: activity?.qingmei || {
-            claimed: true,
-            claimable: false,
-          },
-        });
-        return;
-      }
-      sendProviderError(res, err);
-    }
-  });
-
-  app.post("/api/activity/qingmei/wine/sell", async (req, res) => {
-    const accountId = getAuthorizedAccountId(req, res, routeContext);
-    if (!accountId) return;
-
-    try {
-      if (!requireConnectedAccount(res, provider, accountId, "青梅酿售卖失�?: 账号未运�?"))
-        return;
-
-      const result = await provider.brewAndSellQingmeiWine(accountId, req.body || {});
-      res.json({
-        ok: true,
-        ...result,
-      });
-    } catch (err) {
-      if (isQingmeiWineBusinessError(err)) {
-        let activity = null;
-        try {
-          activity = await provider.getHeluActivity(accountId);
-        } catch (_) {
-          activity = null;
-        }
-        res.json({
-          ok: false,
-          stage: err?.stage || '',
-          error: err?.message || '青梅酿售卖失�?',
-          activity,
-          qingmei: activity?.qingmei || null,
-        });
-        return;
-      }
       sendProviderError(res, err);
     }
   });
