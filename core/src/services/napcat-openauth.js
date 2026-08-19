@@ -258,7 +258,54 @@ async function postJson(url, body, headers = {}, timeout = Number(process.env.NA
     return json;
 }
 
+// 【2026-08-19】运行时解析结果必须缓存。
+// getNapCatRuntimeOneBot() 原本每次调用都重新跑一遍 WebUI /api/auth/login，
+// 而前端 2s 轮询登录状态会链式调到这里 → 两分钟就是几十次登录，
+// NapCat 直接回 {"code":-1,"message":"login rate limit"}。
+// 缓存本身就是限流的正解；切记不要再加“全局冷却并直接抛错”，
+// 那会把瞬时限流升级成硬失败，连快速登录一起卡死（已踩过这个坑）。
+let runtimeCache = { value: null, at: 0 };
+const RUNTIME_CACHE_TTL_MS = Number(process.env.NAPCAT_RUNTIME_CACHE_TTL_MS) || 60000;
+
+function invalidateNapCatRuntimeCache() {
+    runtimeCache = { value: null, at: 0 };
+}
+
+// 直接读 NapCat 本地 onebot11*.json 并探测 /get_login_info。
+// 这条路完全不碰 WebUI，因此不会触发登录限流；只要会话已登录就能成功。
+async function probeLocalOneBotRuntime() {
+    try {
+        const configuredBase = new URL(String(process.env.NAPCAT_BASE_URL || 'http://127.0.0.1:3001'));
+        const configDir = NAPCAT_CONFIG_DIR;
+        const files = fs.existsSync(configDir) ? fs.readdirSync(configDir).filter(name => /^onebot11.*\.json$/i.test(name)) : [];
+        for (const name of files) {
+            try {
+                const cfg = JSON.parse(fs.readFileSync(path.join(configDir, name), 'utf8'));
+                const servers = Array.isArray(cfg?.network?.httpServers) ? cfg.network.httpServers : [];
+                const server = servers.find(item => item && item.enable !== false && Number(item.port) === Number(configuredBase.port || 3001));
+                if (!server) continue;
+                const oneBotBaseUrl = `${configuredBase.protocol}//${configuredBase.hostname}:${server.port}`;
+                const oneBotToken = String(server.token || '');
+                const probeHeaders = oneBotToken ? { Authorization: `Bearer ${oneBotToken}` } : {};
+                const probe = await postJson(`${oneBotBaseUrl}/get_login_info`, {}, probeHeaders);
+                if (Number(probe?.retcode) === 0) return { oneBotBaseUrl, oneBotToken };
+            } catch (_) {}
+        }
+    } catch (_) {}
+    return null;
+}
+
 async function getNapCatRuntimeOneBot() {
+    if (runtimeCache.value && Date.now() - runtimeCache.at < RUNTIME_CACHE_TTL_MS) {
+        return runtimeCache.value;
+    }
+    // 先走零成本的本地探测，避免把 WebUI 登录打到限流
+    const local = await probeLocalOneBotRuntime();
+    if (local) {
+        runtimeCache = { value: local, at: Date.now() };
+        return local;
+    }
+
     const webUiBase = String(process.env.NAPCAT_WEBUI_BASE_URL || 'http://127.0.0.1:6099').replace(/\/+$/, '');
     let lastError = null;
     for (const configPath of getWebUiConfigCandidates()) {
@@ -270,41 +317,25 @@ async function getNapCatRuntimeOneBot() {
             const hash = crypto.createHash('sha256').update(`${webUiToken}.napcat`).digest('hex');
             const login = await postJson(`${webUiBase}/api/auth/login`, { hash });
             const credential = String(login?.data?.Credential || '');
-            if (login?.code !== 0 || !credential) throw new Error('WebUI authentication failed');
+            // 限流是瞬时的（实测：同一秒重试即返回 code:0），
+            // 只当作本次失败往下走降级路径，绝不设全局冷却。
+            if (login?.code !== 0 || !credential) {
+                throw new Error(/rate limit/i.test(String(login?.message || ''))
+                    ? 'NapCat WebUI 登录瞬时限流（login rate limit）'
+                    : 'WebUI authentication failed');
+            }
             const obConfig = await postJson(`${webUiBase}/api/OB11Config/GetConfig`, {}, { Authorization: `Bearer ${credential}` });
             const servers = Array.isArray(obConfig?.data?.network?.httpServers) ? obConfig.data.network.httpServers : [];
-            const configuredBase = new URL(String(process.env.NAPCAT_BASE_URL || 'http://127.0.0.1:3000'));
+            const configuredBase = new URL(String(process.env.NAPCAT_BASE_URL || 'http://127.0.0.1:3001'));
             const configuredPort = Number(configuredBase.port || (configuredBase.protocol === 'https:' ? 443 : 80));
             const httpServer = servers.find(item => item && item.enable !== false && Number(item.port) === configuredPort)
                 || servers.find(item => item && item.enable !== false);
             const oneBotToken = String(httpServer?.token || '');
             if (!httpServer) throw new Error('OneBot HTTP server missing');
-            return { oneBotBaseUrl: `${configuredBase.protocol}//${configuredBase.hostname}:${httpServer.port}`, oneBotToken };
+            const resolved = { oneBotBaseUrl: `${configuredBase.protocol}//${configuredBase.hostname}:${httpServer.port}`, oneBotToken };
+            runtimeCache = { value: resolved, at: Date.now() };
+            return resolved;
         } catch (e) { lastError = e; }
-    }
-    // Fall back to NapCat's local OneBot configuration when its WebUI token
-    // rotates. The adapter is loopback-only, and this avoids showing a stale
-    // QR code while an already scanned QQ session is actually available.
-    try {
-        const configuredBase = new URL(String(process.env.NAPCAT_BASE_URL || 'http://127.0.0.1:3001'));
-        const configDir = NAPCAT_CONFIG_DIR;
-        const files = fs.existsSync(configDir) ? fs.readdirSync(configDir).filter(name => /^onebot11.*\.json$/i.test(name)) : [];
-        for (const name of files) {
-            try {
-                const cfg = JSON.parse(fs.readFileSync(path.join(configDir, name), 'utf8'));
-                const servers = Array.isArray(cfg?.network?.httpServers) ? cfg.network.httpServers : [];
-                const server = servers.find(item => item && item.enable !== false && Number(item.port) === Number(configuredBase.port || 3001));
-                if (server) {
-                    const oneBotBaseUrl = `${configuredBase.protocol}//${configuredBase.hostname}:${server.port}`;
-                    const oneBotToken = String(server.token || '');
-                    const probeHeaders = oneBotToken ? { Authorization: `Bearer ${oneBotToken}` } : {};
-                    const probe = await postJson(`${oneBotBaseUrl}/get_login_info`, {}, probeHeaders);
-                    if (Number(probe?.retcode) === 0) return { oneBotBaseUrl, oneBotToken };
-                }
-            } catch (_) {}
-        }
-    } catch (_) {
-        // Retain the more useful WebUI error below.
     }
     throw new Error(lastError?.message || 'NapCat WebUI runtime authentication unavailable');
 }
@@ -437,6 +468,7 @@ module.exports = {
     NAPCAT_FARM_APP_ID,
     NAPCAT_OPEN_AUTH_ACTION,
     isTemporaryNapCatServiceActive,
+    invalidateNapCatRuntimeCache,
     getNapCatRuntimeOneBot,
     requestNapCatFarmAuthorization,
     getNapCatLoginProfile,

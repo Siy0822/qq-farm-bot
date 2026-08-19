@@ -64,6 +64,13 @@ services:
       - NAPCAT_LAUNCH_MODE=process
       - NAPCAT_LAUNCHER=/app/napcat/launch-qq.sh
       - NAPCAT_BRIDGE_SOCKET=/run/qqfarm-napcat-bridge/bridge.sock
+      # 【2026-08-19】对齐宕主机 qq-farm-napcat-bridge.service 里显式设的三个变量。
+      # 容器化时漏了这三个，全靠代码默认值兜；其中 WebUI 路径的
+      # NAPCAT_BASE_URL 默认曾是 3000（错的，农场用 3001），只能靠降级分支探测兵到，
+      # 一旦 WebUI 路径先命中就会拿错端口。显式固定，不再依赖默认值。
+      - NAPCAT_BASE_URL=http://127.0.0.1:3001
+      - NAPCAT_WEBUI_BASE_URL=http://127.0.0.1:6099
+      - NAPCAT_TIMEOUT_MS=8000
     logging:
       driver: "json-file"
       options:
