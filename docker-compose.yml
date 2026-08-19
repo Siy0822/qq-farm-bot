@@ -50,19 +50,23 @@ services:
   napcat-farm:
     build:
       context: .
-      dockerfile: napcat/Dockerfile
-    image: qq-farm-napcat:latest
+      dockerfile: napcat/Dockerfile.host-runtime
+      additional_contexts:
+        # /opt/napcat-shell 是软链接；构建上下文直接指向真实目录，
+        # 把宿主机已验证可用的 QQ 3.2.29 + NapCat bundle 原样装进镜像。
+        host_napcat: /opt/napcat-shell.bak-20260709093049
+    image: qq-farm-napcat:host-runtime
     container_name: qq-farm-napcat
     restart: unless-stopped
     volumes:
-      - qq-farm-napcat-data:/app/napcat-data
-      - qq-farm-napcat-home:/app/napcat-home
+      # 与宿主机成功链路保持同一路径；卷内迁入宿主机 6099 的配置和登录资料。
+      - qq-farm-napcat-data:/opt/napcat-docker
       - qq-farm-napcat-bridge:/run/qqfarm-napcat-bridge
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-      - NAPCAT_WORKDIR=/app/napcat-data
+      - NAPCAT_WORKDIR=/opt/napcat-docker
       - NAPCAT_LAUNCH_MODE=process
-      - NAPCAT_LAUNCHER=/app/napcat/launch-qq.sh
+      - NAPCAT_LAUNCHER=/opt/napcat-shell/start-napcat-xvfb.sh
       - NAPCAT_BRIDGE_SOCKET=/run/qqfarm-napcat-bridge/bridge.sock
       # 【2026-08-19】对齐宕主机 qq-farm-napcat-bridge.service 里显式设的三个变量。
       # 容器化时漏了这三个，全靠代码默认值兜；其中 WebUI 路径的
@@ -86,7 +90,5 @@ volumes:
     name: qq-farm-test-yyb-db
   qq-farm-napcat-data:
     name: qq-farm-napcat-data
-  qq-farm-napcat-home:
-    name: qq-farm-napcat-home
   qq-farm-napcat-bridge:
     name: qq-farm-napcat-bridge
