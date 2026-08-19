@@ -3,6 +3,7 @@ const {
   checkNapCatBridge,
   getNapCatLoginStatus,
   getNapCatQrCode,
+  getNapCatQrImage,
   refreshNapCatQrCode,
 } = require('../services/napcat-bridge-client');
 
@@ -43,6 +44,17 @@ function registerAdminNapCatRoutes({
   app.get('/api/qr/napcat-poll', async (_req, res) => {
     try {
       const data = await getNapCatLoginStatus();
+      res.json({ ok: true, data });
+    } catch (error) {
+      res.status(502).json({ ok: false, error: error.message });
+    }
+  });
+
+  // 无副作用：只读当前 qrcode.png。NapCat 自己每 ~122s 重写该文件轮换二维码，
+  // 前端靠 /napcat-poll 的 updatedAt 变化拉这个接口跟随换图，全程不碰进程。
+  app.get('/api/qr/napcat-image', async (_req, res) => {
+    try {
+      const data = await getNapCatQrImage();
       res.json({ ok: true, data });
     } catch (error) {
       res.status(502).json({ ok: false, error: error.message });

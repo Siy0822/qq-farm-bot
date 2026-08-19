@@ -7,6 +7,7 @@ const path = require('node:path');
 const {
   getNapCatLoginProfile,
   getNapCatRuntimeState,
+  isTemporaryNapCatServiceActive,
   requestNapCatFarmAuthorization,
   startTemporaryNapCat,
   stopTemporaryNapCat,
@@ -21,14 +22,14 @@ const NAPCAT_WORKDIR = process.env.NAPCAT_WORKDIR || '/opt/napcat-docker';
 const QR_PATH = process.env.NAPCAT_QR_IMAGE_PATH || path.join(NAPCAT_WORKDIR, 'cache', 'qrcode.png');
 // 冷启动要先拉起 Electron + 等网络就绪，15s 在慢盘上不够。
 const QR_TIMEOUT_MS = Number(process.env.NAPCAT_QR_TIMEOUT_MS) || 45000;
-// QQ 二维码大约 2 分钟失效，而 NapCat 一个会话只在启动时生成一次、从不自己轮换。
-// 再加上 qrcode.png 在持久化卷里（跳容器重启仍在），若只看“文件存在且非空”
-// 就会把几分钟、甚至几天前的死码当新码发给前端 → 用户扫一次失败一次。
-// 留 30s 余量给用户扫码，超过这个年龄就重拉一张。
-const QR_MAX_AGE_MS = Number(process.env.NAPCAT_QR_MAX_AGE_MS) || 90000;
+// 【重要】2026-08-19 实测 launcher.log 确认：NapCat **自己就会在同一会话内
+// 每 ~122 秒原地重写 qrcode.png 轮换二维码**（例：10:27:55 冷启动后，
+// 10:29:57 / 10:31:59 / ... / 10:48:14 均无冷启动而自行换码）。
+// 所以绝不能在这里自己搞“二维码过期就 stop+start”：
+// 一旦阈值小于轮换周期，就会把用户正在扫的会话反复打死（已踩过这个坑）。
+// 会话活着就直接读当前文件，让 NapCat 自己负责新鲜度。
 let authorizeQueue = Promise.resolve();
-// 二维码轮换会 stop+start QQ，必须串行：前端 2s 轮询并发打进来时，
-// 并行重启会互相杀进程、生成一堆没人用的会话。
+// 启动/重启会话必须串行，否则并发请求会互相杀进程。
 let qrQueue = Promise.resolve();
 
 function enqueueAuthorization(task) {
@@ -45,7 +46,7 @@ function enqueueQr(task) {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-/** 读当前二维码文件状态（不带副作用） */
+/** 读当前二维码文件状态（无副作用） */
 function statQr() {
   try {
     const stat = fs.statSync(QR_PATH);
@@ -93,29 +94,32 @@ function readBody(req) {
 }
 
 /**
- * 等一张真正新生成的二维码。notBefore 是本轮重启的起始时间，
- * 只接受 mtime 不早于它的文件——否则会把上一个会话遗留的死码当成新码立即返回。
+ * 等一张 mtime 不早于 notBefore 的二维码。
+ * notBefore 仅在“我们刚主动重启过会话”时传，用于避开重启前遗留的文件；
+ * 会话本来就活着时 notBefore=0，直接用当前文件（NapCat 自己轮换，不需我们管）。
  */
 async function waitForQr(timeoutMs = QR_TIMEOUT_MS, notBefore = 0) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const info = statQr();
-    if (info && info.updatedAt >= notBefore && info.ageMs <= QR_MAX_AGE_MS) return readQr(info);
+    if (info && info.updatedAt >= notBefore) return readQr(info);
     await sleep(250);
   }
   throw new Error(`QQ 扫码二维码生成超时（${QR_PATH}）`);
 }
 
 /**
- * 保证拿到一张未过期的二维码。现有码还新鲜就直接用；
- * 过期（或 force）则 stop → 删旧码 → start，拿一张新的。
- * 注：napcat-openauth.startTemporaryNapCat() 在 QQ 还活着时会直接 early return，
- * 它删旧码那句 unlink 在走不到的 else 分支里，所以轮换必须在这里显式 stop。
+ * 拿一张可用二维码。
+ * - 会话已在跑：直接读当前文件，绝不重启（重启会杀掉用户正在扫的码）
+ * - 会话不在（或 force=用户显式点刷新）：stop → 删旧码 → start → 等新码
  */
-async function ensureFreshQr({ force = false } = {}) {
-  if (!force) {
+async function ensureQr({ force = false } = {}) {
+  const active = await isTemporaryNapCatServiceActive();
+  if (active && !force) {
     const info = statQr();
-    if (info && info.ageMs <= QR_MAX_AGE_MS) return readQr(info);
+    if (info) return readQr(info);
+    // 会话刚拉起、码还没写出来：等一下就好，不要重启
+    return waitForQr();
   }
   const startedAt = Date.now();
   await stopTemporaryNapCat().catch(() => {});
@@ -147,11 +151,16 @@ async function handle(req, res) {
         hasQr: !!info,
         ageMs: info ? info.ageMs : null,
         updatedAt: info ? info.updatedAt : null,
-        // stale=true 时前端应重拉一张，避免用户盯着死码扫
-        stale: !info || info.ageMs > QR_MAX_AGE_MS,
-        maxAgeMs: QR_MAX_AGE_MS,
+        sessionActive: await isTemporaryNapCatServiceActive(),
       },
     });
+  }
+  if (req.method === 'GET' && url.pathname === '/image') {
+    // 无副作用：只读当前 qrcode.png。NapCat 自己每 ~122s 重写该文件，
+    // 前端靠 updatedAt 变化拉这个接口跟随换图，全程不碰进程。
+    const info = statQr();
+    if (!info) return json(res, 404, { ok: false, error: '当前无二维码' });
+    return json(res, 200, { ok: true, data: readQr(info) });
   }
   if (req.method === 'GET' && url.pathname === '/qrcode') {
     try {
@@ -159,7 +168,7 @@ async function handle(req, res) {
         const profile = await getNapCatLoginProfile();
         if (profile.uin) return json(res, 200, { ok: true, data: { loggedIn: true, profile } });
       } catch {}
-      const qr = await enqueueQr(() => ensureFreshQr());
+      const qr = await enqueueQr(() => ensureQr());
       return json(res, 200, { ok: true, data: { loggedIn: false, ...qr } });
     } catch (error) {
       return json(res, 502, { ok: false, error: error.message });
@@ -167,7 +176,7 @@ async function handle(req, res) {
   }
   if (req.method === 'POST' && url.pathname === '/refresh') {
     try {
-      const qr = await enqueueQr(() => ensureFreshQr({ force: true }));
+      const qr = await enqueueQr(() => ensureQr({ force: true }));
       return json(res, 200, { ok: true, data: { loggedIn: false, ...qr } });
     } catch (error) {
       return json(res, 502, { ok: false, error: error.message });

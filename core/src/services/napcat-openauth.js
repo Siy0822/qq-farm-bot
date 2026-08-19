@@ -436,6 +436,7 @@ function getNapCatRuntimeState() {
 module.exports = {
     NAPCAT_FARM_APP_ID,
     NAPCAT_OPEN_AUTH_ACTION,
+    isTemporaryNapCatServiceActive,
     getNapCatRuntimeOneBot,
     requestNapCatFarmAuthorization,
     getNapCatLoginProfile,

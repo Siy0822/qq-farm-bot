@@ -43,6 +43,7 @@ const qqStatus = ref<'idle' | 'checking' | 'success' | 'error'>('idle')
 const qqStatusMessage = ref('')
 const qqErrorMessage = ref('')
 const qqQrCode = ref('')
+const qqQrUpdatedAt = ref<number>(0)
 const qqQrLoading = ref(false)
 const qqWaitingForScan = ref(false)
 const captureEnabled = ref(false)
@@ -117,8 +118,8 @@ const { pause: stopQqCheck, resume: startQqCheck } = useIntervalFn(async () => {
   if (!qqWaitingForScan.value || activeTab.value !== 'qq' || loading.value)
     return
   try {
-    // 轮询必须走无副作用的 napcat-poll：用 napcat-login 会在二维码过期时
-    // 重启 QQ，把用户正在扫的会话反复打死。
+    // 轮询必须走无副作用的 napcat-poll：用 napcat-login 会连带启动/重启会话，
+    // 把用户正在扫的会话反复打死。
     const { data } = await api.get('/api/qr/napcat-poll')
     const result = data?.data || {}
     if (result.loggedIn) {
@@ -128,10 +129,17 @@ const { pause: stopQqCheck, resume: startQqCheck } = useIntervalFn(async () => {
       await authorizeViaNapCat()
       return
     }
-    // 二维码已过期（QQ 码约 2 分钟失效，NapCat 不自动轮换）：
-    // 主动换一张，不让用户盯着死码扫。
-    if (result.stale && !qqQrLoading.value)
-      await loadNapCatQRCode(true)
+    // 【2026-08-19 实测】NapCat 自己会在同一会话内每 ~122s 原地重写 qrcode.png
+    // 轮换二维码，前端只需跟着换图，绝不能自己去请求重启（那会杀掉正在扫的码）。
+    // napcat-image 与 /status 同源，同样无副作用，只读当前文件。
+    if (result.updatedAt && result.updatedAt !== qqQrUpdatedAt.value) {
+      const fresh = await api.get('/api/qr/napcat-image')
+      const img = fresh.data?.data?.qrcode
+      if (img) {
+        qqQrCode.value = img
+        qqQrUpdatedAt.value = fresh.data?.data?.updatedAt || result.updatedAt
+      }
+    }
   }
   catch {
     // 扫码等待期间保持轮询；显式刷新时会展示错误。
