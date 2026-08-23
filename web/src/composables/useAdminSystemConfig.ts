@@ -41,7 +41,7 @@ interface UseAdminSystemConfigOptions {
 
 const defaultSystemConfigValues: SystemConfig = {
   serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
-  clientVersion: '1.12.5.29_20260721',
+  clientVersion: '1.13.2.10_20260723',
   platform: 'qq',
   os: 'iOS',
 }
@@ -121,7 +121,7 @@ export function useAdminSystemConfig(options: UseAdminSystemConfigOptions) {
       }
     }
     catch (e: any) {
-      options.showAlert(`保存失败: ${e.message || '未知错误'}`, 'danger')
+      options.showAlert(e?.response?.data?.error || `保存失败: ${e.message || '未知错误'}`, 'danger')
     }
     finally {
       loginLinksSaving.value = false
@@ -276,7 +276,7 @@ export function useAdminSystemConfig(options: UseAdminSystemConfigOptions) {
         options.showAlert(data?.error || '保存失败', 'danger')
     }
     catch (e: any) {
-      options.showAlert(`保存失败: ${e.message || '未知错误'}`, 'danger')
+      options.showAlert(e?.response?.data?.error || `保存失败: ${e.message || '未知错误'}`, 'danger')
     }
     finally {
       wxConfigSaving.value = false
@@ -330,7 +330,7 @@ export function useAdminSystemConfig(options: UseAdminSystemConfigOptions) {
         options.showAlert(data?.error || '保存失败', 'danger')
     }
     catch (e: any) {
-      options.showAlert(`保存失败: ${e.message || '未知错误'}`, 'danger')
+      options.showAlert(e?.response?.data?.error || `保存失败: ${e.message || '未知错误'}`, 'danger')
     }
     finally {
       systemConfigSaving.value = false
@@ -353,7 +353,7 @@ export function useAdminSystemConfig(options: UseAdminSystemConfigOptions) {
       }
     }
     catch (e: any) {
-      options.showAlert(`重置失败: ${e.message || '未知错误'}`, 'danger')
+      options.showAlert(e?.response?.data?.error || `重置失败: ${e.message || '未知错误'}`, 'danger')
     }
     finally {
       systemConfigSaving.value = false

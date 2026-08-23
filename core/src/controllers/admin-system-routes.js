@@ -69,19 +69,33 @@ function registerAdminSystemRoutes({
     }
   }
 
+  // 允许的自定义协议：QQ 加群/会话唤起常用这几种
+  const ALLOWED_LINK_SCHEMES = /^(https?|mqqapi|mqq|tencent|weixin|alipays):\/\//i;
+  // 形如 qm.qq.com/xxx、www.example.com 的裸域名，自动补 https://
+  const BARE_DOMAIN = /^[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?(\/.*)?$/i;
+
+  /** 归一化用户填写的链接：裸域名补 https://，其余原样返回 */
+  const normalizePublicLink = (value) => {
+    const link = String(value || "").trim();
+    if (!link) return "";
+    if (link.startsWith("/") || ALLOWED_LINK_SCHEMES.test(link)) return link;
+    if (BARE_DOMAIN.test(link)) return `https://${link}`;
+    return link;
+  };
+
   const isAllowedPublicLink = (value) => {
+    const link = String(value || "").trim();
+    return !link || link.startsWith("/") || ALLOWED_LINK_SCHEMES.test(link);
+  };
+
+  const isAllowedImageLink = (value) => {
     const link = String(value || "").trim();
     return (
       !link ||
       link.startsWith("/") ||
       /^https?:\/\//i.test(link) ||
-      /^mqqapi:\/\//i.test(link)
+      /^data:image\/[a-z0-9.+-]+;base64,/i.test(link)
     );
-  };
-
-  const isAllowedImageLink = (value) => {
-    const link = String(value || "").trim();
-    return !link || link.startsWith("/") || /^https?:\/\//i.test(link);
   };
 
   app.get("/api/super-admin-announcement", (req, res) => {
@@ -258,38 +272,49 @@ function registerAdminSystemRoutes({
     (req, res) => {
       try {
         if (!requireDangerConfirmation(req, res, "UPDATE_LOGIN_LINKS")) return;
-        const {
-          logoUrl,
-          title,
-          loginSubtitle,
-          registerSubtitle,
-          purchaseUrl,
-          qqGroupUrl,
-        } = req.body || {};
-        if (!isAllowedPublicLink(purchaseUrl) || !isAllowedPublicLink(qqGroupUrl)) {
+        const { title, loginSubtitle, registerSubtitle } = req.body || {};
+        const logoUrl = normalizePublicLink((req.body || {}).logoUrl);
+        const purchaseUrl = normalizePublicLink((req.body || {}).purchaseUrl);
+        const qqGroupUrl = normalizePublicLink((req.body || {}).qqGroupUrl);
+
+        const badLinkField = !isAllowedPublicLink(purchaseUrl)
+          ? "购买链接"
+          : !isAllowedPublicLink(qqGroupUrl)
+            ? "QQ群链接"
+            : "";
+        if (badLinkField) {
           return res.status(400).json({
             ok: false,
-            error: "链接仅支持站内路径、http(s) 或 mqqapi 协议",
+            error: `${badLinkField}格式不支持：请填写 http(s):// 完整地址、站内路径（以 / 开头），或 mqqapi/tencent 等 QQ 唤起协议`,
           });
         }
         if (!isAllowedImageLink(logoUrl)) {
           return res.status(400).json({
             ok: false,
-            error: "登录图标仅支持站内路径或 http(s) 图片地址",
+            error:
+              "登录图标格式不支持：请填写 http(s):// 图片地址、站内路径（以 / 开头）或 data:image base64，也可直接用「上传本地图片」",
           });
         }
-        if (
-          String(title || "").trim().length > 40 ||
-          String(loginSubtitle || "").trim().length > 80 ||
-          String(registerSubtitle || "").trim().length > 80
-        ) {
+        const titleLen = String(title || "").trim().length;
+        const loginLen = String(loginSubtitle || "").trim().length;
+        const registerLen = String(registerSubtitle || "").trim().length;
+        if (titleLen > 40 || loginLen > 80 || registerLen > 80) {
+          const over = [];
+          if (titleLen > 40) over.push(`主标题 ${titleLen}/40 字`);
+          if (loginLen > 80) over.push(`登录欢迎语 ${loginLen}/80 字`);
+          if (registerLen > 80) over.push(`注册提示语 ${registerLen}/80 字`);
           return res.status(400).json({
             ok: false,
-            error: "登录页标题最多40字，提示语最多80字",
+            error: `内容超长：${over.join("，")}`,
           });
         }
         const previous = store.getLoginLinks();
-        const data = store.setLoginLinks(req.body || {});
+        const data = store.setLoginLinks({
+          ...(req.body || {}),
+          logoUrl,
+          purchaseUrl,
+          qqGroupUrl,
+        });
         if (previous.logoUrl !== data.logoUrl) deleteManagedLoginLogo(previous.logoUrl);
         logger.warn("更新登录页设置", {
           admin: req.currentUser?.username || "",
