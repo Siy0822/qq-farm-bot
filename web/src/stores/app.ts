@@ -5,6 +5,7 @@ import api from '@/api'
 const THEME_KEY = 'ui_theme'
 
 export type Theme = 'light' | 'dark'
+export type ThemePreference = Theme | 'system'
 
 export interface LoginPageConfig {
   logoUrl: string
@@ -39,7 +40,13 @@ export interface ThemeConfig {
 }
 
 export const useAppStore = defineStore('app', () => {
-  const currentTheme = ref<Theme>((localStorage.getItem(THEME_KEY) as Theme) || 'light')
+  const savedPreference = localStorage.getItem(THEME_KEY) as ThemePreference | null
+  // 未存过偏好时默认跟随系统。以前硬编码回退 'light'，导致 iPhone Safari
+  // 等「没有本地记录」的设备即使系统开了深色模式也强制显示白底。
+  const themePreference = ref<ThemePreference>(savedPreference === 'system' || savedPreference === 'dark' || savedPreference === 'light' ? savedPreference : 'system')
+  const currentTheme = ref<Theme>(themePreference.value === 'system'
+    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    : themePreference.value)
   const showThemePanel = ref(false)
   const loginPageConfig = ref<LoginPageConfig>({ ...defaultLoginPageConfig })
   let loginPageConfigPromise: Promise<void> | null = null
@@ -74,6 +81,21 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function fetchTheme() {
+    if (themePreference.value === 'system') {
+      applySystemTheme()
+      return
+    }
+
+    const savedTheme = localStorage.getItem(THEME_KEY) as ThemePreference | null
+    if (savedTheme === 'system') {
+      applySystemTheme()
+      return
+    }
+    if (savedTheme && themes[savedTheme]) {
+      applyTheme(savedTheme)
+      return
+    }
+
     try {
       const res = await api.get('/api/settings')
       const theme = res.data?.data?.ui?.theme as Theme | undefined
@@ -81,7 +103,7 @@ export const useAppStore = defineStore('app', () => {
         applyTheme(theme)
     }
     catch {
-      // 未登录时静默失败，使用本地缓存主题。
+      // 未登录时静默失败，使用默认主题。
     }
   }
 
@@ -102,14 +124,21 @@ export const useAppStore = defineStore('app', () => {
     return loginPageConfigPromise
   }
 
-  function applyTheme(theme: Theme) {
+  function getSystemTheme(): Theme {
+    return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  }
+
+  function applyTheme(theme: Theme, persist = true) {
     if (!themes[theme]) {
       theme = 'light'
     }
 
     const t = themes[theme]
     currentTheme.value = theme
-    localStorage.setItem(THEME_KEY, theme)
+    if (persist) {
+      themePreference.value = theme
+      localStorage.setItem(THEME_KEY, theme)
+    }
 
     if (typeof document !== 'undefined' && document.documentElement) {
       document.documentElement.style.setProperty('--theme-bg', t.bg)
@@ -134,25 +163,45 @@ export const useAppStore = defineStore('app', () => {
     showThemePanel.value = !showThemePanel.value
   }
 
+  function applyPreference(preference: ThemePreference) {
+    themePreference.value = preference
+    localStorage.setItem(THEME_KEY, preference)
+    applyTheme(preference === 'system' ? getSystemTheme() : preference, false)
+  }
+
+  function applySystemTheme() {
+    if (themePreference.value === 'system')
+      applyTheme(getSystemTheme(), false)
+  }
+
   function toggleDark() {
-    applyTheme(currentTheme.value === 'dark' ? 'light' : 'dark')
+    applyPreference(currentTheme.value === 'dark' ? 'light' : 'dark')
   }
 
   const isDark = computed(() => themes[currentTheme.value]?.isDark ?? false)
 
+  let systemThemeMedia: MediaQueryList | null = null
+  if (typeof window !== 'undefined') {
+    systemThemeMedia = window.matchMedia('(prefers-color-scheme: dark)')
+    systemThemeMedia.addEventListener('change', applySystemTheme)
+  }
+
   watch(currentTheme, (val) => {
-    applyTheme(val)
+    applyTheme(val, false)
   })
 
-  applyTheme(currentTheme.value)
+  applyTheme(currentTheme.value, false)
 
   return {
     isDark,
     currentTheme,
+    themePreference,
     showThemePanel,
     loginPageConfig,
     themes,
     applyTheme,
+    applyPreference,
+    applySystemTheme,
     toggleThemePanel,
     toggleDark,
     fetchTheme,

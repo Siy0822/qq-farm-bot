@@ -16,7 +16,12 @@ app.use(router)
 
 // Apply theme immediately before app mounts
 const THEME_KEY = 'ui_theme'
-const savedTheme = localStorage.getItem(THEME_KEY) || 'light'
+// 默认跟随系统：新设备/新浏览器（如 iPhone Safari）localStorage 为空时，
+// 以前硬编码回退 'light'，导致 iOS 开了深色模式也显示白底。
+const savedPreference = localStorage.getItem(THEME_KEY) || 'system'
+const resolvedTheme = savedPreference === 'system'
+  ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+  : savedPreference
 
 const lightTheme = {
   isDark: false,
@@ -38,7 +43,7 @@ const darkTheme = {
   gradient: 'linear-gradient(135deg, #4ade80 0%, #fbbf24 100%)',
 }
 
-const theme = savedTheme === 'dark' ? darkTheme : lightTheme
+const theme = resolvedTheme === 'dark' ? darkTheme : lightTheme
 if (theme) {
   document.documentElement.style.setProperty('--theme-bg', theme.bg)
   document.documentElement.style.setProperty('--theme-text', theme.text)
@@ -48,12 +53,16 @@ if (theme) {
   document.documentElement.style.setProperty('--theme-gradient', theme.gradient)
   document.documentElement.style.setProperty('--theme-glass', theme.isDark ? 'rgba(14,18,24,0.55)' : 'rgba(255,255,255,0.5)')
   document.documentElement.style.setProperty('--theme-border', theme.isDark ? 'rgba(74,222,128,0.15)' : 'rgba(34,166,94,0.12)')
-  if (savedTheme === 'dark') {
+  if (resolvedTheme === 'dark') {
     document.documentElement.classList.add('dark')
   }
   else {
     document.documentElement.classList.remove('dark')
   }
+  // Safari 地址栏/状态栏配色只认 theme-color meta
+  const themeColorMeta = document.querySelector('meta[name="theme-color"]')
+  if (themeColorMeta)
+    themeColorMeta.setAttribute('content', theme.isDark ? '#0b1020' : '#f6f8fb')
 }
 
 // Global Error Handling
