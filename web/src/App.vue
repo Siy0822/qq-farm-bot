@@ -37,6 +37,9 @@ body {
 
 /* Color theme variables */
 :root {
+  /* 告诉浏览器当前是浅色：滚动条、原生下拉、日期选择器、
+     input 自动填充背景等“浏览器自绘 UI”才会跟着变。 */
+  color-scheme: light;
   --theme-bg: #f8fafc;
   --theme-text: #172033;
   --theme-primary: #3b82f6;
@@ -56,6 +59,9 @@ body {
 }
 
 .dark {
+  /* 关键：没有这一行，暗色模式下浏览器原生 UI（滚动条、下拉框、
+     日期控件、自动填充）仍然是白色，页面会“一半黑一半白”。 */
+  color-scheme: dark;
   --app-bg: radial-gradient(circle at top left, color-mix(in srgb, var(--theme-primary) 16%, transparent) 0, transparent 28rem), linear-gradient(180deg, #0b1020 0%, color-mix(in srgb, var(--theme-bg) 74%, #020617) 100%);
   --surface-1: color-mix(in srgb, var(--theme-bg) 72%, #ffffff 9%);
   --surface-2: color-mix(in srgb, var(--theme-bg) 78%, #ffffff 6%);

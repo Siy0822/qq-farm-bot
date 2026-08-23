@@ -65,9 +65,8 @@ withDefaults(defineProps<{
   min-width: 50px;
 }
 
-@media (prefers-color-scheme: dark) {
-  .strength-bar {
+/* 深色：跟随应用主题类，而非操作系统偏好 */
+  html.dark .strength-bar {
     background: #2a4a3a;
   }
-}
 </style>

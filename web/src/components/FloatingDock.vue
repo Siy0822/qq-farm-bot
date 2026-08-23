@@ -448,42 +448,41 @@ async function handleAccountSaved() {
 .popup-enter-from, .popup-leave-to { opacity: 0; }
 .popup-enter-active .account-popup { animation: popup-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 
-  @media (prefers-color-scheme: light) {
-  .floating-nav {
-    background: color-mix(in srgb, #f8fafc 82%, transparent);
-    border-color: rgba(15, 23, 42, 0.1);
-    border-bottom-color: transparent;
-    box-shadow: 0 -4px 24px rgba(15, 23, 42, 0.08);
-  }
-  .nav-item { color: rgba(0, 0, 0, 0.5); }
-  .nav-item--active { color: #000; background: rgba(0, 0, 0, 0.05); box-shadow: 0 0 20px color-mix(in srgb, var(--theme-primary) 15%, transparent); }
-  .nav-item--active::before { background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--theme-primary) 70%, #000), transparent); }
-  @media (hover: hover) {
-    .nav-item:hover:not(.nav-item--active) { color: rgba(0, 0, 0, 0.8); background: rgba(0, 0, 0, 0.03); }
-  }
-  .account-popup {
-    background: rgba(245, 245, 250, 0.85);
-    border: 1px solid rgba(0, 0, 0, 0.06);
-    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
-  }
-  .popup-title { color: #111; }
-  .popup-item { color: #222; }
-  .popup-item:hover { background: rgba(0,0,0,0.04); }
-  .popup-item--active { background: rgba(108,92,231,0.08); }
-  .popup-sub { color: rgba(0,0,0,0.4); }
-  .popup-remark-btn { color: rgba(0,0,0,0.3); }
-  .popup-remark-btn:hover { color: #000; background: rgba(0,0,0,0.04); }
-  .popup-footer { border-top-color: rgba(0,0,0,0.06); }
-    .popup-action {
-    background: rgba(0,0,0,0.04);
-    border-color: rgba(0,0,0,0.08);
-  }
-  .popup-action:hover { background: rgba(0,0,0,0.08); }
-  .popup-action--danger { border-color: rgba(231,76,60,0.28); }
-  .popup-action--danger:hover { background: rgba(231,76,60,0.08); }
-  .popup-action--danger:hover { background: rgba(231,76,60,0.06); }
-  .popup-close { background: rgba(0,0,0,0.04); color: rgba(0,0,0,0.4); }
+/* 浅色：跟随应用主题类，而非操作系统偏好 */
+html:not(.dark) .floating-nav {
+background: color-mix(in srgb, #f8fafc 82%, transparent);
+border-color: rgba(15, 23, 42, 0.1);
+border-bottom-color: transparent;
+box-shadow: 0 -4px 24px rgba(15, 23, 42, 0.08);
 }
+html:not(.dark) .nav-item { color: rgba(0, 0, 0, 0.5); }
+html:not(.dark) .nav-item--active { color: #000; background: rgba(0, 0, 0, 0.05); box-shadow: 0 0 20px color-mix(in srgb, var(--theme-primary) 15%, transparent); }
+html:not(.dark) .nav-item--active::before { background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--theme-primary) 70%, #000), transparent); }
+@media (hover: hover) {
+  html:not(.dark) .nav-item:hover:not(.nav-item--active) { color: rgba(0, 0, 0, 0.8); background: rgba(0, 0, 0, 0.03); }
+}
+html:not(.dark) .account-popup {
+background: rgba(245, 245, 250, 0.85);
+border: 1px solid rgba(0, 0, 0, 0.06);
+box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
+}
+html:not(.dark) .popup-title { color: #111; }
+html:not(.dark) .popup-item { color: #222; }
+html:not(.dark) .popup-item:hover { background: rgba(0,0,0,0.04); }
+html:not(.dark) .popup-item--active { background: rgba(108,92,231,0.08); }
+html:not(.dark) .popup-sub { color: rgba(0,0,0,0.4); }
+html:not(.dark) .popup-remark-btn { color: rgba(0,0,0,0.3); }
+html:not(.dark) .popup-remark-btn:hover { color: #000; background: rgba(0,0,0,0.04); }
+html:not(.dark) .popup-footer { border-top-color: rgba(0,0,0,0.06); }
+html:not(.dark) .popup-action {
+background: rgba(0,0,0,0.04);
+border-color: rgba(0,0,0,0.08);
+}
+html:not(.dark) .popup-action:hover { background: rgba(0,0,0,0.08); }
+html:not(.dark) .popup-action--danger { border-color: rgba(231,76,60,0.28); }
+html:not(.dark) .popup-action--danger:hover { background: rgba(231,76,60,0.08); }
+html:not(.dark) .popup-action--danger:hover { background: rgba(231,76,60,0.06); }
+html:not(.dark) .popup-close { background: rgba(0,0,0,0.04); color: rgba(0,0,0,0.4); }
 
 @media (max-width: 640px) {
   .floating-nav { gap: 4px; padding: 4px 4px calc(4px + env(safe-area-inset-bottom, 0px)); border-radius: 12px 12px 0 0; }

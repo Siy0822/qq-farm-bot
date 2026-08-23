@@ -395,8 +395,8 @@ function getPlantSizeText(targetLand: any) {
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  .rainbow-progress-bar {
+/* 深色：跟随应用主题类，而非操作系统偏好 */
+  html.dark .rainbow-progress-bar {
     background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
     box-shadow:
       inset 3px 3px 6px rgba(0, 0, 0, 0.3),
@@ -404,16 +404,15 @@ function getPlantSizeText(targetLand: any) {
       2px 2px 4px rgba(0, 0, 0, 0.2);
   }
 
-  .rainbow-progress-bar::before {
+  html.dark .rainbow-progress-bar::before {
     background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02));
   }
 
-  .rainbow-progress-fill {
+  html.dark .rainbow-progress-fill {
     box-shadow:
       inset 0 2px 4px rgba(255, 255, 255, 0.2),
       inset 0 -1px 2px rgba(0, 0, 0, 0.2);
   }
-}
 
 /* ===== 合种（2x2 合并）土地：跨 2 行 2 列，直观区别于普通土地 ===== */
 .land-card--merged {
