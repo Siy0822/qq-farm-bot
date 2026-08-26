@@ -404,6 +404,28 @@ export const useFriendStore = defineStore('friend', () => {
     }
   }
 
+  async function applyFriendsBatch(accountId: string, items: Array<{ gid: number, openid: string, shareKey: string }>) {
+    if (!accountId || !items.length)
+      return { ok: false, accepted: 0, skipped: 0, invalid: 0, total: 0 }
+    try {
+      const res = await api.post('/api/friend/apply/batch', { items }, { headers: { 'x-account-id': accountId } })
+      return { ok: !!res.data.ok, ...res.data }
+    }
+    catch (e: any) {
+      return { ok: false, accepted: 0, skipped: 0, invalid: items.length, total: items.length, error: e?.response?.data?.error || e?.message || '批量申请失败' }
+    }
+  }
+
+  async function fetchFriendApplyStatus(accountId: string) {
+    const res = await api.get('/api/friend/apply/status', { headers: { 'x-account-id': accountId } })
+    return Array.isArray(res.data?.items) ? res.data.items : []
+  }
+
+  async function cancelFriendApply(accountId: string, gids: number[]) {
+    const res = await api.post('/api/friend/apply/cancel', { gids }, { headers: { 'x-account-id': accountId } })
+    return { ok: !!res.data?.ok, cancelled: Number(res.data?.cancelled || 0) }
+  }
+
   async function deleteFriendsBatch(accountId: string, gids: number[], password?: string) {
     if (!accountId || !gids || gids.length === 0)
       return { ok: false, successCount: 0, failedCount: 0 }
@@ -526,5 +548,8 @@ export const useFriendStore = defineStore('friend', () => {
     deleteFriendsBatch,
     deleteFriend,
     applyFriend,
+    applyFriendsBatch,
+    fetchFriendApplyStatus,
+    cancelFriendApply,
   }
 })

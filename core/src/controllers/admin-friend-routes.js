@@ -1,4 +1,5 @@
 const DOG_INFO_HTTP_TIMEOUT_MS = 11 * 60 * 1000;
+const friendApplyQueue = require('../services/friend-apply-queue');
 
 function getAccountOrRespond(req, res, { getAccountIdFromRequest, canAccessAccount, includeMissingMessage = true }) {
   const accountId = getAccountIdFromRequest(req);
@@ -258,6 +259,31 @@ function registerAdminFriendRoutes({
       }
       sendProviderError(res, error);
     }
+  });
+
+  // Bulk friend applications are queued in the admin process and consumed
+  // serially. This prevents concurrent ReportArkClick RPCs from exhausting the
+  // account worker connection. Cancellation removes pending jobs immediately;
+  // an already-running worker RPC cannot be force-aborted, so its result is
+  // discarded and no subsequent queued job is started until it settles.
+  app.post("/api/friend/apply/batch", (req, res) => {
+    const accountId = getAccountOrRespond(req, res, access);
+    if (!accountId) return;
+    const result = friendApplyQueue.enqueue(accountId, provider, req.body?.items);
+    res.json({ ok: true, ...result });
+  });
+
+  app.get("/api/friend/apply/status", (req, res) => {
+    const accountId = getAccountOrRespond(req, res, access);
+    if (!accountId) return;
+    res.json({ ok: true, items: friendApplyQueue.snapshot(accountId, provider) });
+  });
+
+  app.post("/api/friend/apply/cancel", (req, res) => {
+    const accountId = getAccountOrRespond(req, res, access);
+    if (!accountId) return;
+    const cancelled = friendApplyQueue.cancel(accountId, provider, req.body?.gids);
+    res.json({ ok: true, cancelled });
   });
 
   app.get("/api/friend-blacklist", async (req, res) => {

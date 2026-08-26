@@ -317,22 +317,6 @@ const allSelected = computed({
 const successCount = computed(() => rows.value.filter(r => r.status === 'success').length)
 const failedCount = computed(() => rows.value.filter(r => r.status === 'failed').length)
 
-// ------------ 错误码友好文案 ------------
-function describeResult(ok: boolean, code: number, error: string): { text: string, kind: TargetRow['resultKind'] } {
-  if (ok)
-    return { text: '✅ 申请已发送', kind: 'ok' }
-  switch (code) {
-    case 1005024:
-      return { text: '凭证已过期（请用新鲜卡片）', kind: 'warn' }
-    case 1005004:
-      return { text: '对方好友列表已满', kind: 'warn' }
-    case 1005014:
-      return { text: '协议结构错误', kind: 'error' }
-    default:
-      return { text: error || (code ? `失败 code=${code}` : '发送失败'), kind: 'error' }
-  }
-}
-
 function maskKey(key: string) {
   if (!key)
     return '(无凭证)'
@@ -341,93 +325,43 @@ function maskKey(key: string) {
   return `${key.slice(0, 8)}…${key.slice(-4)}`
 }
 
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-async function sendRow(row: TargetRow) {
-  row.status = 'sending'
-  row.resultText = '发送中…'
-  row.resultKind = 'none'
-  // 唯一路径（2026-08-05 已验证）：gid + openid + share_key → ReportArkClick，无需 Enter、绕过 1002007
-  const isCard = !!row.openid && !!row.gid && /^[0-9a-f]{32}$/i.test(row.key)
-  if (!isCard) {
-    row.status = 'failed'
-    row.resultText = '缺少 openid，请粘贴完整分享卡数据 (uid&openid&share_key)'
-    row.resultKind = 'error'
-    return
-  }
-  const res = await friendStore.applyFriend(props.accountId, {
-    gid: row.gid,
-    shareKey: row.key,
-    openid: row.openid,
-  })
-  const desc = describeResult(res.ok, res.code, res.error)
-  row.status = res.ok ? 'success' : 'failed'
-  row.resultText = desc.text
-  row.resultKind = desc.kind
-}
-
 async function sendSelected() {
-  if (!props.accountId) {
-    toast.error('请先选择账号')
-    return
-  }
-  if (!props.accountRunning) {
-    toast.error('当前账号未在线，请先在账号列表启动该账号')
-    return
-  }
-  const targets = rows.value.filter(r => r.selected)
-  if (targets.length === 0) {
-    toast.error('请先勾选要发送的目标')
-    return
-  }
-  const interval = Math.max(0, Number(sendIntervalMs.value) || 0)
+  if (!props.accountId) { toast.error('请先选择账号'); return }
+  if (!props.accountRunning) { toast.error('当前账号未在线，请先在账号列表启动该账号'); return }
+  const targets = rows.value.filter(r => r.selected && r.keyValid && r.openid && r.gid)
+  if (targets.length === 0) { toast.error('请先勾选包含完整 openid 的有效目标'); return }
   sending.value = true
   cancelRequested.value = false
-  let sent = 0
-  let skipped = 0
+  for (const row of targets) { row.status = 'pending'; row.resultText = '排队中…'; row.resultKind = 'none' }
   try {
-    for (let i = 0; i < targets.length; i++) {
-      if (cancelRequested.value) {
-        skipped = targets.length - i
-        break
-      }
-      const row = targets[i]
-      if (!row)
-        continue
-      await sendRow(row)
-      sent++
-      if (cancelRequested.value) {
-        skipped = targets.length - i - 1
-        break
-      }
-      if (i < targets.length - 1 && interval > 0)
-        await sleep(interval)
-    }
-    if (cancelRequested.value) {
-      // 恢复仍在"发送中"的行（请求未返回的视为未发送）
-      for (const r of rows.value) {
-        if (r.status === 'sending') {
-          r.status = 'pending'
-          r.resultText = ''
-          r.resultKind = 'none'
+    const result = await friendStore.applyFriendsBatch(props.accountId, targets.map(row => ({ gid: row.gid, openid: row.openid!, shareKey: row.key })))
+    if (!result.ok) { toast.error(result.error || '批量申请失败'); return }
+    const timer = window.setInterval(async () => {
+      try {
+        const items = await friendStore.fetchFriendApplyStatus(props.accountId)
+        for (const row of targets) {
+          const item = items.find((v: any) => Number(v.gid) === row.gid)
+          if (!item) continue
+          row.status = item.status === 'sent' ? 'success' : item.status === 'failed' ? 'failed' : item.status
+          row.resultText = item.status === 'sent' ? '✅ 申请已发送' : item.status === 'failed' ? (item.error || '发送失败') : item.status === 'sending' ? '发送中…' : '排队中…'
+          row.resultKind = item.status === 'sent' ? 'ok' : item.status === 'failed' ? 'error' : 'none'
         }
-      }
-      toast.info(`已取消发送：已发送 ${sent} 条${skipped > 0 ? `，跳过 ${skipped} 条` : ''}`)
-    }
-    else {
-      toast.success(`发送完成：成功 ${successCount.value}，失败 ${failedCount.value}`)
-    }
-  }
-  finally {
-    sending.value = false
-    cancelRequested.value = false
-  }
+        if (targets.every(row => row.status === 'success' || row.status === 'failed')) window.clearInterval(timer)
+      } catch { /* retain current status */ }
+    }, 500)
+    // Safety cleanup for unusually slow/disconnected workers.
+    window.setTimeout(() => window.clearInterval(timer), 10 * 60 * 1000)
+    toast.success(`已加入串行队列：${result.accepted || 0} 条`)
+  } finally { sending.value = false }
 }
 
 function cancelSending() {
   cancelRequested.value = true
+  const gids = rows.value.filter(r => r.selected && (r.status === 'pending' || r.status === 'sending')).map(r => r.gid)
+  void friendStore.cancelFriendApply(props.accountId, gids).then(() => {
+    for (const row of rows.value) if (gids.includes(row.gid) && row.status !== 'success') { row.status = 'pending'; row.resultText = ''; row.resultKind = 'none' }
+    toast.info('已取消排队中的好友申请')
+  })
 }
 
 async function retryFailed() {
