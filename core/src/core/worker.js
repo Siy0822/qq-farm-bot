@@ -995,6 +995,22 @@ async function handleApiCall(msg) {
                 result = await claimGuanxingRewards();
                 break;
             }
+            case 'getYuluActivity': {
+                result = await require('../services/yulu').getYuluActivity();
+                break;
+            }
+            case 'openYuluItem': {
+                result = await require('../services/yulu').openYuluItem(args[0]);
+                break;
+            }
+            case 'researchYulu': {
+                result = await require('../services/yulu').researchYulu(args[0]);
+                break;
+            }
+            case 'exchangeYulu': {
+                result = await require('../services/yulu').exchangeYulu();
+                break;
+            }
             case 'getServerVersion': {
                 const { types } = require('../utils/proto');
                 const { body } = await sendMsgAsync('gamepb.gamepb.LoginService', 'GetLoginInfo', Buffer.alloc(0), 5000);

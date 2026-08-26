@@ -185,6 +185,10 @@ function createDataProvider(deps) {
         // ========== 观星礼录 ==========
         getGuanxingActivity: (ref) => callWorkerApi(resolveAccountId(ref), 'getGuanxingActivity'),
         claimGuanxingRewards: (ref) => callWorkerApi(resolveAccountId(ref), 'claimGuanxingRewards'),
+        getYuluActivity: (ref) => callWorkerApi(resolveAccountId(ref), 'getYuluActivity'),
+        openYuluItem: (ref, itemId) => callWorkerApi(resolveAccountId(ref), 'openYuluItem', itemId),
+        researchYulu: (ref, nodeId) => callWorkerApi(resolveAccountId(ref), 'researchYulu', nodeId),
+        exchangeYulu: (ref) => callWorkerApi(resolveAccountId(ref), 'exchangeYulu'),
 
         // ========== Illustrated ==========
         getIllustratedList: (ref, type, level) => callWorkerApi(resolveAccountId(ref), 'getIllustratedList', type, level),
