@@ -31,7 +31,7 @@ const CATEGORY_OPTIONS = [
 
 type CategoryValue = typeof CATEGORY_OPTIONS[number]['value']
 
-const selectedCategory = ref<CategoryValue>('fruit')
+const selectedCategory = ref<CategoryValue>('all')
 
 function getItemCategory(item: any): CategoryValue {
   const itemType = Number(item?.itemType || 0)

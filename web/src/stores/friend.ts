@@ -121,7 +121,18 @@ export const useFriendStore = defineStore('friend', () => {
       if (!isCurrentAccount(requestedId))
         return
       if (res.data.ok) {
-        friends.value = res.data.data || []
+        const nextFriends = Array.isArray(res.data.data) ? res.data.data : []
+        // 普通好友列表接口不携带狗信息。合并当前已检测到的 dogId，避免
+        // 检测完成后被并发的列表刷新覆盖，导致筛选标签瞬间恢复为“无护主犬”。
+        const detectedDogs = new Map(
+          friends.value
+            .filter(f => f && Number(f.dogId) > 0)
+            .map(f => [String(f.gid), { dogId: f.dogId, dogName: f.dogName }]),
+        )
+        friends.value = nextFriends.map((friend: any) => {
+          const dog = detectedDogs.get(String(friend?.gid))
+          return dog && Number(friend?.dogId) <= 0 ? { ...friend, ...dog } : friend
+        })
       }
     }
     finally {
@@ -134,6 +145,8 @@ export const useFriendStore = defineStore('friend', () => {
     if (!accountId)
       return { ok: false, error: '账号ID无效' }
     const requestedId = String(accountId)
+    // 使尚未完成的普通好友列表请求失效，避免它覆盖本次狗信息检测结果。
+    friendsFetchToken++
     dogInfoLoading.value = true
     try {
       const res = await api.post('/api/friends/fetch-dog-info', {}, {

@@ -69,7 +69,9 @@ const L: ActivityLabels = {
 } as const
 
 // 鹊桥寄情（七夕，2026-08-18 ~ 08-22）
-const SHOW_QIXI_ACTIVITY = true
+// 【2026-08-23】活动已结束，隐藏入口（后端代码保留）。
+// 七夕为年度活动，明年同期把此处改回 true 即可恢复，无需重写协议实现。
+const SHOW_QIXI_ACTIVITY = false
 // 荷风活动已于 2026-07 结束，隐藏入口（后端代码保留）
 const HELU_EXPIRED = false
 
@@ -331,7 +333,8 @@ watch(sectionTabs, (sections) => {
 // 切到观星礼录页签时加载数据，并触发一次自动领取
 watch(activeSection, (section) => {
   if (section === 'qixi') {
-    refreshQixi()
+    if (SHOW_QIXI_ACTIVITY)
+      refreshQixi()
     return
   }
   if (section !== 'journey')
@@ -347,7 +350,7 @@ watch(currentAccountId, () => {
   refreshAll()
   if (activeSection.value === 'journey')
     refreshGuanxing()
-  if (activeSection.value === 'qixi')
+  if (SHOW_QIXI_ACTIVITY && activeSection.value === 'qixi')
     refreshQixi()
 })
 
@@ -355,7 +358,7 @@ onMounted(() => {
   refreshAll()
   if (activeSection.value === 'journey')
     refreshGuanxing()
-  if (activeSection.value === 'qixi')
+  if (SHOW_QIXI_ACTIVITY && activeSection.value === 'qixi')
     refreshQixi()
 })
 </script>

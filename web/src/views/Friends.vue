@@ -84,11 +84,13 @@ const deletePassword = ref('')
 const deleteSubmitting = ref(false)
 
 function isGuardDog(friend: any) {
-  return Number(friend?.dogId) === 90021
+  // 【2026-08-23】「护主犬」= 所有看家犬的统称（田园犬/牧羊犬/斑点狗/柯基/护主犬…），
+  // 不是单指 dogId=90021。原先用 === 90021 判定，导致好友养的其他犬全被算成「无护主犬」。
+  return Number(friend?.dogId) > 0
 }
 
 const guardDogCount = computed(() =>
-  friends.value.filter((friend: any) => Number(friend?.dogId) === 90021).length,
+  friends.value.filter((friend: any) => isGuardDog(friend)).length,
 )
 
 const deleteTargetFriends = computed(() => {
@@ -267,9 +269,9 @@ const noGuardDogCount = computed(() => friends.value.length - guardDogCount.valu
 
 const dogFilteredFriends = computed(() => {
   if (dogFilter.value === 'guardDog')
-    return sortedFriends.value.filter((friend: any) => Number(friend?.dogId) === 90021)
+    return sortedFriends.value.filter((friend: any) => isGuardDog(friend))
   if (dogFilter.value === 'noGuardDog')
-    return sortedFriends.value.filter((friend: any) => Number(friend?.dogId) !== 90021)
+    return sortedFriends.value.filter((friend: any) => !isGuardDog(friend))
   return sortedFriends.value
 })
 

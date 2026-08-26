@@ -419,6 +419,7 @@ async function submitManual() {
 function close() {
   stopQqCheck()
   qqWaitingForScan.value = false
+  void api.post('/api/qr/napcat-release', {}).catch(() => {})
   stopCaptureCheck()
   void cancelCaptureSession()
   resetYybQr()
@@ -911,7 +912,8 @@ function resetYybQr() {
 </script>
 
 <template>
-  <div v-if="show" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
+  <Teleport to="body">
+    <div v-if="show" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
     <div class="max-h-[90vh] max-w-md w-full overflow-hidden rounded-lg shadow-xl" :style="{ background: 'var(--theme-bg)' }">
       <div class="flex items-center justify-between border-b p-4" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 10%, transparent)' }">
         <h3 class="text-lg font-semibold" :style="{ color: 'var(--theme-text)' }">
@@ -1628,5 +1630,6 @@ function resetYybQr() {
         </div>
       </div>
     </div>
-  </div>
+    </div>
+  </Teleport>
 </template>

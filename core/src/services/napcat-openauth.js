@@ -412,13 +412,26 @@ async function requestQuickLogin(uin) {
     });
     if (!configPath) throw new Error('NapCat WebUI config not found');
     const webUiConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    const hash = crypto.createHash('sha256').update(`${webUiConfig.token}.napcat`).digest('hex');
+    const webUiToken = String(webUiConfig.token || '');
+    const hash = crypto.createHash('sha256').update(`${webUiToken}.napcat`).digest('hex');
     const base = String(process.env.NAPCAT_WEBUI_BASE_URL || 'http://127.0.0.1:6099').replace(/\/+$/, '');
-    const login = await postJson(`${base}/api/auth/login`, { hash }, {}, 3000);
-    const credential = String(login?.data?.Credential || '');
-    if (login?.code !== 0 || !credential) throw new Error('NapCat WebUI authentication failed');
-    const result = await postJson(`${base}/api/QQLogin/SetQuickLogin`, { uin }, { Authorization: `Bearer ${credential}` }, 5000);
-    if (result?.code !== 0) throw new Error(result?.message || 'NapCat quick login failed');
+    let lastError = null;
+    // WebUI 会在 QQ 刚启动的几秒内还没准备好；限流时也要退避，不能连续猛打。
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+        try {
+            const login = await postJson(`${base}/api/auth/login`, { hash }, {}, 5000);
+            const credential = String(login?.data?.Credential || '');
+            if (login?.code !== 0 || !credential) throw new Error(/rate limit/i.test(String(login?.message || ''))
+                ? 'NapCat WebUI 登录限流' : 'NapCat WebUI authentication failed');
+            const result = await postJson(`${base}/api/QQLogin/SetQuickLogin`, { uin }, { Authorization: `Bearer ${credential}` }, 5000);
+            if (result?.code !== 0) throw new Error(result?.message || 'NapCat quick login failed');
+            return;
+        } catch (error) {
+            lastError = error;
+            await sleep(Math.min(3000, 500 + attempt * 400));
+        }
+    }
+    throw lastError || new Error('NapCat WebUI authentication failed');
 }
 
 async function ensureTemporaryNapCatForUin(uin) {

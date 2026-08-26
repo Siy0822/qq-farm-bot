@@ -460,7 +460,9 @@ function cloneAccountConfig(config = DEFAULT_ACCOUNT_CONFIG) {
     }
 
     const knownFriendGids = normalizeKnownFriendGids(config.knownFriendGids);
-    const plantBlacklist = Array.isArray(config.plantBlacklist) ? config.plantBlacklist : [];
+    // null/缺失表示沿用默认偷菜黑名单；显式 [] 才表示用户要清空。
+    const plantBlacklist = Array.isArray(config.plantBlacklist)
+        ? config.plantBlacklist : DEFAULT_PLANT_BLACKLIST;
 
     return {
         ...config,
@@ -1562,11 +1564,15 @@ function addOrUpdateAccount(account) {
     let accountId = '';
     let created = false;
     const nextAvatar = account.avatar || account.avatarUrl || account.avatar_url;
-    const nextOpenId = account.openId || account.open_id;
+    const nextOpenId = account.openId || account.open_id || account.openID || account.openid || account.yybOpenid;
+    const existingByOpenId = !account.id && nextOpenId
+        ? data.accounts.find(a => String(a.openId || a.open_id || a.openID || a.openid || a.yybOpenid || '').trim() === String(nextOpenId).trim())
+        : null;
+    const effectiveAccountId = account.id || (existingByOpenId && existingByOpenId.id);
 
-    if (account.id) {
-        // 更新已有账号
-        const idx = data.accounts.findIndex(a => a.id === account.id);
+    if (effectiveAccountId) {
+        // 更新已有账号；同一 OpenID 重扫时复用原账号，避免重复添加。
+        const idx = data.accounts.findIndex(a => a.id === String(effectiveAccountId));
         if (idx >= 0) {
             const mergedThirdparty = account.thirdparty !== undefined
                 ? (account.thirdparty === null

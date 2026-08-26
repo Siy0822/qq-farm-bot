@@ -104,21 +104,24 @@ async function runBatchWithFallback(landIds, batchFn, singleFn, opts = {}) {
 
 // ===== 狗信息随巡查收集 =====
 // 正常偷菜/帮忙/捣乱都要 enterFriendFarm，reply 里已带 __briefDogInfo。
-// 顺手把护主犬(id=90021)信息写回本地缓存，避免单独跑 fetchFriendsDogInfo 全量拉取。
+// 顺手把看家犬信息写回本地缓存，避免单独跑 fetchFriendsDogInfo 全量拉取。
+//
+// 【2026-08-23 语义修正】"护主犬" 是所有看家犬的统称（田园犬/牧羊犬/斑点狗/柯基/护主犬...），
+// 不是单指 dogId=90021 那一种。原先全链路用 `=== 90021` 判定，导致好友养的其他犬
+// 一律被算成"无护主犬"，面板"有护主犬"恒为 0。现统一改为 dogId > 0 即算有犬。
 function cacheDogInfoFromEnterReply(gid, enterReply) {
   try {
     const dogInfo = enterReply && enterReply.__briefDogInfo;
-    if (!dogInfo || toNum(dogInfo.dogId) === 0) return;
-    const dogId = toNum(dogInfo.dogId);
-    const dogName = getDogName(dogId) || '无狗';
+    // 完全没有摘要字段 = 无从判断，不动缓存（避免解析缺失误删已知记录）
+    if (!dogInfo) return;
 
     const accountId = process.env.FARM_ACCOUNT_ID || '';
     if (!accountId) return;
 
-    // 只缓存护主犬（与 friend-land-analyzer.fetchFriendsDogInfo 的持久化策略一致）
-    if (dogId !== 90021) {
-      // 【2026-08-07 修复】好友已不是护主犬：从缓存删除旧记录。
-      // 原逻辑直接 return 导致"换狗/删好友"后伪护主犬永久残留 → 每轮白进 + 漏掉真正的护主犬。
+    const dogId = toNum(dogInfo.dogId);
+
+    // 明确返回"无犬"：清掉旧记录，避免"换狗/删好友"后伪记录永久残留（每轮白进农场）
+    if (dogId <= 0) {
       const existing = readFriendDogInfoCache(accountId) || {};
       if (existing[gid]) {
         delete existing[gid];
@@ -127,8 +130,9 @@ function cacheDogInfoFromEnterReply(gid, enterReply) {
       return;
     }
 
+    const dogName = getDogName(dogId) || '';
     const existing = readFriendDogInfoCache(accountId) || {};
-    if (existing[gid] && existing[gid].dogId === dogId) return;  // 已缓存，跳过写盘
+    if (existing[gid] && toNum(existing[gid].dogId) === dogId) return;  // 已缓存，跳过写盘
 
     existing[gid] = { dogId, dogName };
     writeFriendDogInfoCache(accountId, existing);
@@ -401,12 +405,13 @@ async function visitFriend(friend, tally, myGid, accountId) {
   const helpEnabled = !!isAutomationOn('friend_help');
   const expLimitEnabled = !!isAutomationOn('friend_help_exp_limit');
 
-  // 护主犬(90021)判定：与巡查主流程一致，优先用传入字段，否则查本地狗信息缓存
+  // 看家犬判定（任意犬即算，见 cacheDogInfoFromEnterReply 顶部说明）：
+  // 与巡查主流程一致，优先用传入字段，否则查本地狗信息缓存
   const friendGidNum = toNum(gid);
   const dogCache = readFriendDogInfoCache(accountId);
   const hasGuardDog = !!friend.hasGuardDog ||
-    toNum(friend.dogId) === 90021 ||
-    !!(dogCache && dogCache[friendGidNum] && toNum(dogCache[friendGidNum].dogId) === 90021);
+    toNum(friend.dogId) > 0 ||
+    !!(dogCache && dogCache[friendGidNum] && toNum(dogCache[friendGidNum].dogId) > 0);
 
   if (!expLimitEnabled) setCanGetHelpExp(true);
 
@@ -866,12 +871,13 @@ async function visitFriendForHelp(friend, tally, myGid, accountId, ignoreExpLimi
     return { acted: false, entered: false };
   }
 
-  // 【2026-08-15】对齐纯 Go 版 enterHasGuardDog：进农场后用 enter 实时 brief_dog_info 判定护主犬，
+  // 【2026-08-15】对齐纯 Go 版 enterHasGuardDog：进农场后用 enter 实时 brief_dog_info 判定看家犬，
   // 不再只信磁盘缓存（缓存可能滞后/为空导致误判）。
+  // 【2026-08-23】判定改为"任意犬即算"，不再只认 90021。
   const enterDog = enterReply && enterReply.__briefDogInfo;
   if (fastMode && enterDog && toNum(enterDog.dogId) > 0) {
-    hasGuardDog = toNum(enterDog.dogId) === 90021;
-    if (hasGuardDog) friend.hasGuardDog = true;
+    hasGuardDog = true;
+    friend.hasGuardDog = true;
   }
 
   const lands = enterReply.lands || [];

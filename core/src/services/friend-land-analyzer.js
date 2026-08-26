@@ -29,6 +29,7 @@ const {
   leaveFriendFarm,
   getDogName,
   handleFriendEnterError,
+  queryFriendDogsViaService,
 } = require('./friend-api');
 const {
   getCurrentPhase,
@@ -165,6 +166,31 @@ async function getFriendDogInfo(gid, friendName = '') {
       const dogId = toNum(dogInfo.dogId);
       const dogName = getDogName(dogId);
       return { dogId, dogName: dogName || '无狗' };
+    }
+
+    // 【2026-08-23】Enter 的 brief_dog_info 未给出 dog_id 时不能直接判定"无狗"：
+    // proto3 里 dog_id=0 会被省略，且实测存在只带其它字段、不带 field1 的响应
+    // （GID 1192400240 raw=10ccbd9001，仅 field2=2367180，无 field1）。
+    // 因此一律回退到 DogService.GetDogInfo(host_gid) 权威查询后再下结论。
+    const direct = await queryFriendDogsViaService(numericGid);
+    if (direct.dogId > 0) {
+      const dogName = getDogName(direct.dogId);
+      log('好友', `好友 ${friendName || numericGid} 摘要无dog_id，直查得到 ${direct.dogId}(${dogName})`, {
+        module: 'friend',
+        event: '狗信息直查命中',
+        friendGid: numericGid,
+        dogId: direct.dogId,
+        dogIds: direct.dogIds,
+      });
+      return { dogId: direct.dogId, dogName: dogName || '无狗' };
+    }
+    if (direct.dogIds && direct.dogIds.length > 0) {
+      logWarn('好友', `好友 ${friendName || numericGid} 直查返回物品但无可识别狗: ${direct.dogIds.join(',')}`, {
+        module: 'friend',
+        event: '狗信息直查未识别',
+        friendGid: numericGid,
+        dogIds: direct.dogIds,
+      });
     }
 
     return { dogId: 0, dogName: '无狗' };
@@ -372,7 +398,11 @@ async function getFriendsList(forceRefresh = false) {
 /**
  * Fetch dog info for all friends in the list.
  * 优先用本地缓存（巡查时随 enterFriendFarm 收集的），只对缓存缺失的好友拉取。
- * Caches guard dog (护主犬, id=90021) info locally.
+ * Caches watchdog info locally.
+ *
+ * 【2026-08-23 语义修正】"护主犬" 是所有看家犬的统称（田园犬/牧羊犬/斑点狗/柯基/护主犬...），
+ * 不是单指 dogId=90021。原先用 `=== 90021` 判定导致好友养的其他犬全被算成"无护主犬"。
+ * 现统一改为 dogId > 0 即算有犬。
  */
 async function fetchFriendsDogInfo(forceRefresh = false) {
   const accountId = process.env.FARM_ACCOUNT_ID || '';
@@ -442,31 +472,31 @@ async function fetchFriendsDogInfo(forceRefresh = false) {
   friendsListCache = friends;
   friendsListCacheAt = Date.now();
 
-  // 持久化护主犬信息到磁盘缓存
+  // 持久化看家犬信息到磁盘缓存
   if (accountId) {
-    // 【2026-08-10 修复】forceRefresh（全量刷新）时无论是否有护主犬都必须落盘，
+    // 【2026-08-10 修复】forceRefresh（全量刷新）时无论是否有犬都必须落盘，
     // 否则 "mergedCache 为空 → 不写盘 → 磁盘仍无缓存 → cacheEmpty 永远 true → bootstrap 死循环触发全量刷新"
     // （日志里以 1-3 秒间隔疯狂刷"fetchFriendsDogInfo / batchGetFriendDogInfo / 获取狗信息完成 / 自动获取好友狗信息"，见 issue #30）。
     const mergedCache = forceRefresh
       ? {}
       : { ...(existingCache || {}) };
     for (const friend of friends) {
-      if (friend.dogId === 90021) {
+      if (toNum(friend.dogId) > 0) {
         mergedCache[friend.gid] = {
-          dogId: friend.dogId,
+          dogId: toNum(friend.dogId),
           dogName: friend.dogName,
         };
       }
     }
     if (forceRefresh) {
-      // 全量刷新落盘：保留当前确认为护主犬的好友，清掉旧缓存里的"换狗/删好友后残留的伪护主犬"
+      // 全量刷新落盘：保留当前确认有犬的好友，清掉旧缓存里的"换狗/删好友后残留的伪记录"
       writeFriendDogInfoCache(accountId, mergedCache);
     } else if (Object.keys(mergedCache).length > 0) {
       writeFriendDogInfoCache(accountId, mergedCache);
     }
   }
 
-  const guardDogCount = friends.filter(f => f.dogId === 90021).length;
+  const guardDogCount = friends.filter(f => toNum(f.dogId) > 0).length;
 
   log('好友',
     `获取狗信息完成: 共 ${friends.length} 个好友，护主犬 ${guardDogCount} 个，无狗 ${failCount} 个，黑名单 ${blacklistCount} 个`,

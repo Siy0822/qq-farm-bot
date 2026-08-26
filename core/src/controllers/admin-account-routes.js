@@ -40,14 +40,17 @@ function registerAdminAccountRoutes({
       const currentUser = req.currentUser;
       let data;
       if (currentUser) {
-        // 账号按用户名隔离：管理员也只看自己名下账号，全量账号改由后台 /api/admin/all-accounts 提供
         const accounts = provider.getAccounts();
-        data = {
-          ...accounts,
-          accounts: accounts.accounts.filter(
-            (account) => account.username === currentUser.username,
-          ),
-        };
+        // 管理员需要在主账号列表中查看并管理所有用户添加的账号；
+        // 普通用户仍只看到自己名下账号。
+        data = isAdminUser(currentUser)
+          ? accounts
+          : {
+              ...accounts,
+              accounts: accounts.accounts.filter(
+                (account) => account.username === currentUser.username,
+              ),
+            };
       } else {
         data = { accounts: [], nextId: 1 };
       }
@@ -270,8 +273,15 @@ function registerAdminAccountRoutes({
       if (!isUpdate) {
         const created = data.accounts.at(-1);
         if (created) provider.startAccount(created.id);
-      } else if (wasRunning && !onlyRenaming) {
-        provider.restartAccount(nextAccount.id);
+      } else if (!onlyRenaming) {
+        if (wasRunning) {
+          provider.restartAccount(nextAccount.id);
+        } else if (duplicateYybAccount) {
+          // 微信重新扫码更新已停止的账号：Code 过期导致账号被停恰恰是
+          // 用户来重新扫码的最常见原因，原逻辑只在 wasRunning 时重启，
+          // 扫完码账号仍是停止状态，需要手动再点一次启动。
+          provider.startAccount(nextAccount.id);
+        }
       }
 
       res.json({ ok: true, data });

@@ -48,7 +48,10 @@ async function bootstrap() {
 
     runtimeEngine.start({
         startAdminServer: true,
-        autoStartAccounts: false,
+        // 【2026-08-23】开机自动启动所有账号（原先写死 false，容器每次重建都要手动逐个点「启动」）。
+        // 引擎侧 autoStartAllAccountsOnBoot 会先等 yyb-go / NapCat 桥接就绪再启动，并对失败账号分轮重试。
+        // 如需回退到手动启动，把环境变量 FARM_AUTOSTART_ACCOUNTS 设为 0/false 即可。
+        autoStartAccounts: !/^(0|false|no|off)$/i.test(String(process.env.FARM_AUTOSTART_ACCOUNTS ?? '1').trim()),
     }).catch((err) => {
         mainLogger.error('runtime bootstrap failed', {
             error: err && err.message ? err.message : String(err),

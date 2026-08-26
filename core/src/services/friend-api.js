@@ -32,7 +32,10 @@ const invalidKnownFriendGidCooldownUntil = new Map();
 
 // ===== Dog Name =====
 function getDogName(dogId) {
-  return DOG_NAMES[toNum(dogId)] || '';
+  const id = toNum(dogId);
+  if (DOG_NAMES[id]) return DOG_NAMES[id];
+  // 未收录的狗 ID 也要显式暴露出来，不能静默退化成"无狗"。
+  return id > 0 ? `未知犬#${id}` : '';
 }
 
 // ===== Protobuf helpers =====
@@ -123,21 +126,66 @@ function collectVarints(decodedFields, result = []) {
  * Parse the brief_dog_info protobuf bytes from VisitEnterReply.
  * Returns { dogId, numbers, rawLen, fields } or null.
  */
+function collectVarintsFromBytes(bytes, result = [], depth = 0) {
+  if (!bytes || bytes.length === 0 || depth > 8) return result;
+  try {
+    const reader = protobuf.Reader.create(Buffer.from(bytes));
+    while (reader.pos < reader.len) {
+      const tag = reader.uint32();
+      const wireType = tag & 0x7;
+      if (wireType === 0) {
+        const value = Number(reader.uint64().toString());
+        if (Number.isFinite(value) && value > 0) result.push(Math.floor(value));
+      }
+      else if (wireType === 1) {
+        reader.skip(8);
+      }
+      else if (wireType === 2) {
+        collectVarintsFromBytes(reader.bytes(), result, depth + 1);
+      }
+      else if (wireType === 5) {
+        reader.skip(4);
+      }
+      else {
+        reader.skipType(wireType);
+      }
+    }
+  }
+  catch (_) {
+    // brief_dog_info may contain opaque extension bytes; retain values parsed before it.
+  }
+  return result;
+}
+
 function parseBriefDogInfoBytes(bytes) {
   if (!bytes || bytes.length === 0) return null;
-  let fields = [];
+  let dogId = 0;
+  let decoded = null;
+
+  // Prefer the declared BriefDogInfo schema. Keep recursive scanning as a
+  // compatibility fallback for older or opaque server payloads.
   try {
-    fields = decodeProtoFields(bytes);
+    if (types.BriefDogInfo) {
+      decoded = types.BriefDogInfo.decode(Buffer.from(bytes));
+      dogId = toNum(decoded.dog_id);
+    }
   } catch (_) {
-    fields = [];
+    decoded = null;
   }
-  const varints = collectVarints(fields).filter(v => v > 0);
-  const dogId = varints.find(id => Object.hasOwn(DOG_NAMES, id)) || 0;
+
+  const varints = collectVarintsFromBytes(bytes);
+  // 只有在 dog_id 缺失/为 0 时才回退扫描。绝不能因为"名字表里没这只狗"就把
+  // 服务端明确返回的 dog_id 清零 —— 那会让新增/改版的狗（含护主犬）被误判为无狗。
+  if (dogId <= 0) {
+    dogId = varints.find(id => Object.hasOwn(DOG_NAMES, id))
+      || varints.find(id => id >= 90000 && id < 91000)
+      || 0;
+  }
   return {
     dogId,
-    numbers: varints.slice(-3),   // last 3 varints
+    numbers: varints.slice(-3),
     rawLen: bytes.length,
-    fields,
+    fields: decoded || undefined,
   };
 }
 
@@ -159,6 +207,75 @@ function extractVisitEnterBriefDogInfo(rawBytes) {
     reader.skipType(wireType);
   }
   return null;
+}
+
+/**
+ * 直查好友狗（DogService.GetDogInfo，host_gid=1）。
+ *
+ * 【为何需要】Enter 的 brief_dog_info 在部分好友上会只带剩余时间、不带 dog_id
+ * （实测 GID 1192400240 raw=10ccbd9001，仅 field2=2367180≈27.4天，无 field1）。
+ * 仅靠摘要会把这类好友误判为"无狗"，进而漏掉护主犬。
+ * 本接口返回 repeated DogInfo，是权威数据源。
+ *
+ * 响应结构：f1 = repeated DogInfo(len)，其内 f1=id / f3=expire_time / f4=status / f5=level / f7=active
+ * @returns {Promise<{dogId:number, dogIds:number[]}>}
+ */
+async function queryFriendDogsViaService(gid) {
+  const numericGid = toNum(gid);
+  if (!numericGid) return { dogId: 0, dogIds: [] };
+
+  try {
+    const payload = protobuf.Writer.create()
+      .uint32(8)
+      .int64(toLong(numericGid))
+      .finish();
+    const { body } = await sendMsgAsync('gamepb.dogpb.DogService', 'GetDogInfo', payload);
+    if (!body || body.length === 0) return { dogId: 0, dogIds: [] };
+
+    const dogIds = [];
+    const reader = protobuf.Reader.create(Buffer.from(body));
+    while (reader.pos < reader.len) {
+      const tag = reader.uint32();
+      const fieldNo = tag >>> 3;
+      const wireType = tag & 0x7;
+      if (fieldNo === 1 && wireType === 2) {
+        // 嵌套 DogInfo：取 f1 = 物品 id
+        const sub = protobuf.Reader.create(Buffer.from(reader.bytes()));
+        while (sub.pos < sub.len) {
+          const subTag = sub.uint32();
+          const subNo = subTag >>> 3;
+          const subWire = subTag & 0x7;
+          if (subNo === 1 && subWire === 0) {
+            const id = Number(sub.uint64().toString());
+            if (Number.isFinite(id) && id > 0) dogIds.push(Math.floor(id));
+          } else if (subWire === 0) sub.skip();
+          else if (subWire === 1) sub.skip(8);
+          else if (subWire === 5) sub.skip(4);
+          else if (subWire === 2) sub.bytes();
+          else sub.skipType(subWire);
+        }
+      } else if (wireType === 0) reader.skip();
+      else if (wireType === 1) reader.skip(8);
+      else if (wireType === 5) reader.skip(4);
+      else if (wireType === 2) reader.bytes();
+      else reader.skipType(wireType);
+    }
+
+    // 任意看家犬均算有犬（【2026-08-23】"护主犬"是所有犬的统称）：
+    // 先取已收录名单里的，再接受 9xxxx 段未收录的新狗，最后才归 0
+    const dogId = dogIds.find(id => Object.hasOwn(DOG_NAMES, id))
+      || dogIds.find(id => id >= 90000 && id < 91000)
+      || 0;
+    return { dogId, dogIds };
+  } catch (err) {
+    logWarn('好友', `直查好友 ${numericGid} 狗信息失败: ${err.message}`, {
+      module: 'friend',
+      event: '直查好友狗信息',
+      result: 'error',
+      friendGid: numericGid,
+    });
+    return { dogId: 0, dogIds: [] };
+  }
 }
 
 // ===== IPC to master process =====
@@ -717,7 +834,7 @@ function extractEnterNonce(rawBytes) {
     const reader = require('protobufjs/minimal').Reader.create(Buffer.from(rawBytes || []));
     while (reader.pos < reader.len) {
       const key = reader.uint32();
-      const fno = key >> 3, wt = key & 7;
+      const fno = key >> 3; const wt = key & 7;
       if (fno === 7 && wt === 2) {
         const len = reader.uint32();
         return reader.bytes(len).toString('latin1');
@@ -752,6 +869,19 @@ async function enterFriendFarm(gid, opts = {}) {
                   extractVisitEnterBriefDogInfo(body);
   if (dogInfo) {
     reply.__briefDogInfo = dogInfo;
+  }
+  // 诊断：仅在异常时记录原始字节，避免刷屏。
+  // ① 有字节却解不出 dogId　② dogId 不在已知名单（可能是改版/新狗）
+  const diagDogId = dogInfo ? toNum(dogInfo.dogId) : 0;
+  const diagRawLen = dogInfo ? toNum(dogInfo.rawLen) : 0;
+  if ((diagRawLen > 0 && diagDogId <= 0)
+    || (diagDogId > 0 && !Object.hasOwn(DOG_NAMES, diagDogId))) {
+    logWarn('好友', `狗信息解析异常: gid=${toNum(gid)} dogId=${diagDogId} raw=${reply.brief_dog_info ? Buffer.from(reply.brief_dog_info).toString('hex') : ''}`, {
+      module: 'friend',
+      event: '狗信息解析异常',
+      friendGid: toNum(gid),
+      dogId: diagDogId,
+    });
   }
 
   return reply;
@@ -863,5 +993,6 @@ module.exports = {
   checkCanOperateRemote,
   parseBriefDogInfoBytes,
   extractVisitEnterBriefDogInfo,
+  queryFriendDogsViaService,
   clearAllInvalidKnownFriendGidCooldown,
 };

@@ -308,11 +308,13 @@ function createDataProvider(deps) {
             return data;
         },
 
-        startAccount: (ref) => {
+        // options 透传给 startWorker，主要为了 skipLoginRefresh：
+        // 扫码刚写入全新 Code 时，不需要 startWorker 再向 NapCat 授权一次。
+        startAccount: (ref, options = {}) => {
             const id = resolveAccountId(ref);
             const account = findAccount(id || ref);
             if (!account) return false;
-            startWorker(account);
+            startWorker(account, options);
             return true;
         },
 

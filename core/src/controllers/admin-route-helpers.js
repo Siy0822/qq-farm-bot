@@ -30,6 +30,8 @@ function createAdminRouteHelpers({ store, userStore, logger, getProvider }) {
             user => String(user.username || '').trim() === normalizedTarget,
           )
         : null;
+      if (targetUser && targetUser.role === 'super_admin')
+        return '普通管理员不能修改或删除超级管理员账号';
       if (targetUser && targetUser.role === 'admin')
         return '普通管理员不能修改或删除其他管理员账号';
     } catch {}

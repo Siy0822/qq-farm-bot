@@ -53,7 +53,8 @@ async function save() {
 </script>
 
 <template>
-  <div v-if="show" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
+  <Teleport to="body">
+    <div v-if="show" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
     <div class="max-w-sm w-full overflow-hidden rounded-lg bg-white shadow-xl dark:bg-gray-800">
       <div class="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
         <h3 class="text-lg font-semibold">
@@ -92,5 +93,6 @@ async function save() {
         </div>
       </div>
     </div>
-  </div>
+    </div>
+  </Teleport>
 </template>

@@ -97,7 +97,7 @@ function parseScheduleWindow(raw) {
 function computeEffectiveTurbo() {
   if (!isAutomationOn('friend_turbo_mode')) return false;
   if (!isAutomationOn('friend_turbo_scheduled')) return true;
-  const raw = getConfigSnapshot(userState.accountId || '').automation.friend_turbo_schedule_time || '';
+  const raw = getConfigSnapshot(getUserState().accountId || '').automation.friend_turbo_schedule_time || '';
   const win = parseScheduleWindow(raw);
   if (!win) return false;
   const now = beijingMinutes();
@@ -146,6 +146,7 @@ function syncTurboExclusiveMode(accountId) {
 const friendScheduler = createScheduler('friend');
 let badExecutedOnStartup = false;
 let consecutiveBadFailureCount = 0;
+let badPausedLogShown = false;
 // 护主犬缓存全量刷新周期（30 分钟）：周期性重拉好友狗信息，清理伪护主犬、发现新护主犬
 const DOG_INFO_FULL_REFRESH_TTL_MS = 30 * 60 * 1000;
 let lastFullDogInfoRefreshAt = 0;
@@ -208,7 +209,6 @@ async function bootstrapFriendDogInfoCacheIfNeeded() {
   // 【2026-08-15】主动刷新护主犬缓存已删除（用户明确要求）：启动/周期全量刷新会
   // 逐个进 468 好友查狗（串行 ~90 秒），压垮 WS 连接导致掉线。
   // 狗信息只靠日常偷菜/帮忙被动收集（cacheDogInfoFromEnterReply），手动刷新走面板按钮。
-  return;
 }
 
 function syncAutomationPatchToMaster(patch) {
@@ -253,12 +253,16 @@ function pauseFriendBadUntilTomorrow(reason) {
 function isFriendBadPaused() {
   const accountId = process.env.FARM_ACCOUNT_ID || '';
   const retryDate = getFriendBadRetryDate(accountId);
-  if (!retryDate) return false;
+  if (!retryDate) {
+    badPausedLogShown = false;
+    return false;
+  }
   if (getLocalDateKey() < retryDate) return true;
 
   applyConfigSnapshot({ friendBadRetryDate: '' }, { accountId });
   syncAutomationPatchToMaster({ friendBadRetryDate: '' });
   resetBadFailureCount();
+  badPausedLogShown = false;
   return false;
 }
 
@@ -457,7 +461,6 @@ async function checkFriends(options = {}) {
               dryNum,
               weedNum,
               insectNum,
-              dogId: 0x15FA5, // 90021
               hasGuardDog: true,
             });
           }
@@ -489,8 +492,9 @@ async function checkFriends(options = {}) {
         if (gid === userState.gid) continue;
         if (blacklist.has(gid) && blacklist.get(gid).skipHelp) continue;
 
+        // 【2026-08-23】"护主犬" = 所有看家犬的统称，任意犬（dogId>0）即算，不再只认 90021
         const dogId = toNum(friend.dogId);
-        const hasGuardDog = guardDogGidSet.has(gid) || dogId === 90021;
+        const hasGuardDog = guardDogGidSet.has(gid) || dogId > 0;
 
         const name = friend.remark || friend.name || `GID:${gid}`;
         const plant = friend.plant;
@@ -623,7 +627,7 @@ async function checkFriends(options = {}) {
     }
 
     // Bad (put weeds/insects)
-    if (doBad && !isFriendBadPaused()) {
+    if (doBad && canOperateBad() && !isFriendBadPaused()) {
       log('好友', '开始自动放虫放草', {
         module: 'friend',
         event: '开始自动放虫放草',
@@ -697,8 +701,14 @@ async function checkFriends(options = {}) {
           await randomDelay(100, 200);
         }
       }
+    } else if (doBad && isFriendBadPaused() && !badPausedLogShown) {
+      badPausedLogShown = true;
+      log('好友', '捣乱已暂停，等待恢复', {
+        module: 'friend',
+        event: '自动捣乱暂停',
+        result: 'paused',
+      });
     }
-
     // ---- Summary ----
     const summary = [];
     if (tally.steal > 0) summary.push(`偷${tally.steal}`);
@@ -952,7 +962,7 @@ async function runBadOnceOnStartup(force = false) {
 
   const badEnabled = isAutomationOn('friend_bad');
   if (!badEnabled) return;
-  if (isFriendBadPaused()) return;
+  if (!canOperateBad() || isFriendBadPaused()) return;
 
   const userState = getUserState();
   if (!userState.gid) {

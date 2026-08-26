@@ -21,7 +21,7 @@
 const protobuf = require('protobufjs/minimal');
 const { sendMsgAsync, isConnected, getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { toNum } = require('../utils/utils');
+const { toNum, sleep } = require('../utils/utils');
 const { getItemImageById, getItemById } = require('../config/gameConfig');
 const { createModuleLogger } = require('./logger');
 const { getBag, getBagItems } = require('./warehouse');
@@ -177,10 +177,10 @@ function varintBytes(value) {
   const out = [];
   let u = Math.max(0, Number(value) || 0);
   while (u >= 0x80) {
-    out.push((u & 0x7f) | 0x80);
+    out.push((u & 0x7F) | 0x80);
     u = Math.floor(u / 128);
   }
-  out.push(u & 0x7f);
+  out.push(u & 0x7F);
   return Buffer.from(out);
 }
 
@@ -281,7 +281,9 @@ async function useQixiLu(hostGid = 0, uid = 0, landId = 0) {
 }
 
 /**
- * 选出可喷洒地块：有作物的地块；合种地块（land_size>1 且有 slave）master+slaves 一起喷
+ * 选出可喷洒地块：有作物的地块。
+ * 2x2 合种地的从地块通常没有独立 plant，不能把 slave_land_ids 直接加入队列，
+ * 否则 ItemService.Use 会返回 1001011（土地未种植）并中断后续喷洒。
  * @param {number} hostGid 0=自家，>0=好友
  * @param {number[]} wantLandIds 指定地块（空=全部有作物的）
  */
@@ -296,13 +298,6 @@ async function selectSprayLands(hostGid = 0, wantLandIds = []) {
     if (!hasCrop) continue;
     if (want.size > 0 && !want.has(landId)) continue;
     selected.push(landId);
-    // 合种地块：主地块 + 从地块都要各喷一次
-    if (toNum(land?.land_size) > 1 && (land?.slave_land_ids || []).length > 0) {
-      for (const slave of land.slave_land_ids) {
-        const slaveId = toNum(slave);
-        if (slaveId > 0 && !selected.includes(slaveId)) selected.push(slaveId);
-      }
-    }
   }
   return selected;
 }
@@ -586,10 +581,12 @@ async function sprayQixiLu(options = {}) {
         }
       } catch (err) {
         const message = err?.message || String(err);
-        // 该地块今天已喷过：跳过继续下一块，不算失败
-        if (message.includes(QIXI_LAND_ALREADY_SPRAYED_CODE)) {
+        // 该地块今天已喷过，或是合种从地块等无独立作物地块：跳过继续下一块。
+        if (message.includes(QIXI_LAND_ALREADY_SPRAYED_CODE)
+          || message.includes('1001011')
+          || message.includes('土地未种植')) {
           skipped += 1;
-          // Go 上游逐块喷洒；该块已喷不应结束，继续尝试下一块。
+          // 单块失败不应结束整个好友农场的喷洒。
           continue;
         }
         errors.push(`land${landId}: ${message}`);

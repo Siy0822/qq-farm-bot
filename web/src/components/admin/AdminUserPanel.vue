@@ -67,6 +67,25 @@ function formatUserCardDate(timestamp: number | null) {
     return '-'
   return new Date(timestamp).toLocaleString('zh-CN')
 }
+
+// 管理员角色统一判定：super_admin 也必须算管理员。
+// 早期代码只判 role === 'admin'，因为当时唯一的 super_admin 是上游硬编码后门账号，
+// 它被 getAllUsers 过滤掉、从不出现在列表里，所以这些分支从未被触发。
+function isAdminRole(role: string) {
+  return role === 'admin' || role === 'super_admin'
+}
+
+function formatRoleLabel(role: string) {
+  if (role === 'super_admin')
+    return '超级管理员'
+  return role === 'admin' ? '管理员' : '用户'
+}
+
+function formatAccountLimit(user: UserInfo) {
+  if (isAdminRole(user.role) || user.accountLimit === -1)
+    return '无限制'
+  return `${user.accountLimit || 2}个`
+}
 </script>
 
 <template>
@@ -197,17 +216,17 @@ function formatUserCardDate(timestamp: number | null) {
               <td class="whitespace-nowrap px-3 py-2 text-sm text-gray-900 dark:text-white">
                 <span
                   class="inline-flex rounded-full px-2 text-xs font-semibold leading-5"
-                  :class="user.role === 'admin' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'"
+                  :class="isAdminRole(user.role) ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'"
                 >
-                  {{ user.role === 'admin' ? '管理员' : '用户' }}
+                  {{ formatRoleLabel(user.role) }}
                 </span>
               </td>
               <td class="whitespace-nowrap px-3 py-2 text-sm text-gray-900 dark:text-white">
                 <span
                   class="inline-flex rounded-full px-2 text-xs font-semibold leading-5"
-                  :class="user.role === 'admin' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' : 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'"
+                  :class="isAdminRole(user.role) ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' : 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'"
                 >
-                  {{ user.role === 'admin' ? '无限制' : `${user.accountLimit || 2}个` }}
+                  {{ formatAccountLimit(user) }}
                 </span>
               </td>
               <td class="whitespace-nowrap px-3 py-2 text-sm text-gray-900 dark:text-white">
@@ -228,7 +247,7 @@ function formatUserCardDate(timestamp: number | null) {
               </td>
               <td class="whitespace-nowrap px-3 py-2 text-right text-sm font-medium">
                 <button
-                  v-if="user.role !== 'admin'"
+                  v-if="!isAdminRole(user.role)"
                   class="mr-3 text-emerald-600 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-300"
                   @click="$emit('openRenewUser', user)"
                 >
@@ -269,8 +288,9 @@ function formatUserCardDate(timestamp: number | null) {
       </div>
     </div>
 
-    <div
-      v-if="showRenewUserModal"
+    <Teleport to="body">
+      <div
+        v-if="showRenewUserModal"
       class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black bg-opacity-50 p-3 sm:items-center sm:p-4"
       @click.self="!renewUserLoading && closeRenewUserModal()"
     >
@@ -313,8 +333,8 @@ function formatUserCardDate(timestamp: number | null) {
       </div>
     </div>
 
-    <div
-      v-if="showEditModal"
+      <div
+        v-if="showEditModal"
       class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black bg-opacity-50 p-3 sm:items-center sm:p-4"
       @click.self="showEditModal = false"
     >
@@ -409,7 +429,8 @@ function formatUserCardDate(timestamp: number | null) {
           </BaseButton>
         </div>
       </div>
-    </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 <style scoped>

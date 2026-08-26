@@ -55,6 +55,12 @@ api.interceptors.response.use((response) => {
       }
       toast.error(`服务器错误 ${error.response.status} ${error.response.statusText}`)
     }
+    else if (error.response.status === 409 && error.response.data?.busy) {
+      // QQ 扫码单例被别人占用：这是可预期的并发排队，不是故障。
+      // 交给调用处（AccountModal）展示带等待秒数的友好提示，
+      // 不要在这里弹「请求失败，请联系管理员」误导用户。
+      return Promise.reject(error)
+    }
     else {
       toast.error('请求失败，请联系管理员')
     }

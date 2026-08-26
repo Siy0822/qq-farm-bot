@@ -189,7 +189,9 @@ function createWorkerManager(deps) {
         if (!uin) throw new Error('NapCat QQ 账号缺少 UIN，无法刷新 Code');
 
         const { authorizeNapCatFarm } = require('../services/napcat-bridge-client');
-        const result = await authorizeNapCatFarm(uin);
+        // 后台启动/重连属于无人值守任务，也必须带稳定的 system:* 租约归属。
+        // 扫码租约加固后 owner 为空会被桥接明确拒绝（“缺少扫码会话归属标识”）。
+        const result = await authorizeNapCatFarm(uin, `system:start:${uin}`);
         const authorization = result.authorization || {};
         const profile = result.profile || {};
         if (!authorization.code) throw new Error('NapCat QQ 授权未返回农场 Code');

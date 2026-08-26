@@ -71,7 +71,11 @@ function createAutoCodeRefreshService(deps) {
     const platform = String(account.platform || 'qq').toLowerCase();
     if (platform === 'qq' && String(account.loginType || '') === 'napcat_open_auth') {
       try {
-        const result = await authorizeNapCatFarm(String(account.uin || account.qq || '').trim());
+        // 同上：定时刷 Code 走 system:* 归属，撞上用户正在扫码时让路（409 走既有失败重试）。
+        const result = await authorizeNapCatFarm(
+          String(account.uin || account.qq || '').trim(),
+          `system:auto-code:${String(account.uin || account.qq || '').trim()}`,
+        );
         const authorization = result.authorization || {};
         const profile = result.profile || {};
         if (!authorization.code) throw new Error('QQ 授权未返回农场 Code');

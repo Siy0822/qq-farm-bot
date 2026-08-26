@@ -1,5 +1,6 @@
 <template>
-  <Transition name="career-fade">
+  <Teleport to="body">
+    <Transition name="career-fade">
     <div
       v-if="show"
       class="fixed inset-0 z-[1100] flex items-center justify-center p-4 backdrop-blur-sm bg-black/40 sm:p-6 dark:bg-black/55"
@@ -159,7 +160,8 @@
         </template>
       </div>
     </div>
-  </Transition>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">

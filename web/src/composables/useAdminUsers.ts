@@ -75,8 +75,10 @@ export function useAdminUsers() {
   const expiredUsersCount = computed(() =>
     users.value.filter(user => user.card && isExpired(user.card)).length,
   )
+  // super_admin 也要计入管理员统计：早期代码只判 'admin'，因为当时唯一的
+  // super_admin 是上游硬编码后门账号，被 getAllUsers 过滤掉、从不出现在列表里。
   const adminUsersCount = computed(() =>
-    users.value.filter(user => user.role === 'admin').length,
+    users.value.filter(user => user.role === 'admin' || user.role === 'super_admin').length,
   )
   const filteredUsers = computed(() => {
     const query = userSearchQuery.value.trim().toLowerCase()
@@ -269,7 +271,7 @@ export function useAdminUsers() {
     editForm.value = {
       newUsername: user.username,
       password: '',
-      accountLimit: user.accountLimit || 2,
+      accountLimit: user.accountLimit === -1 ? -1 : (user.accountLimit || 2),
       expiresAt: user.card?.expiresAt ? formatDateTimeLocal(user.card.expiresAt) : '',
       isPermanent: user.card?.days === -1,
     }

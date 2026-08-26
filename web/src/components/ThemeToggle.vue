@@ -1,8 +1,33 @@
 <script setup lang="ts">
-import type { Theme } from '@/stores/app'
+import type { Theme, ThemePreference } from '@/stores/app'
 import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
+
+const themeOptions: Array<{
+  key: ThemePreference
+  name: string
+  description: string
+  icon: string
+}> = [
+  { key: 'light', name: '晨光', description: '温暖 · 日光田野', icon: 'i-carbon-sun' },
+  { key: 'dark', name: '夜幕', description: '深邃 · 光感夜幕', icon: 'i-carbon-moon' },
+  { key: 'system', name: '跟随系统', description: '随设备外观自动切换', icon: 'i-carbon-laptop' },
+]
+
+function optionTheme(key: ThemePreference): Theme {
+  return key === 'system' ? appStore.currentTheme : key
+}
+
+function optionGradient(key: ThemePreference) {
+  if (key === 'system')
+    return 'linear-gradient(135deg, #f8fafc 0%, #94a3b8 48%, #0f172a 52%, #334155 100%)'
+  return appStore.themes[key].gradient
+}
+
+function optionPrimary(key: ThemePreference) {
+  return appStore.themes[optionTheme(key)].primary
+}
 </script>
 
 <template>
@@ -19,7 +44,7 @@ const appStore = useAppStore()
           : 'inset 0 1px 2px rgba(0,0,0,0.08)',
       }"
       :title="appStore.isDark ? '切换到浅色模式' : '切换到深色模式'"
-      @click="appStore.toggleDark()"
+      @click="appStore.toggleThemePanel()"
     >
       <!-- 滑块 -->
       <div
@@ -63,52 +88,49 @@ const appStore = useAppStore()
             选择主题
           </h3>
 
-          <!-- 两套主题卡片 -->
+          <!-- 三种主题模式 -->
           <div class="flex flex-col gap-3">
             <button
-              v-for="(t, key) in appStore.themes"
-              :key="key"
+              v-for="option in themeOptions"
+              :key="option.key"
               class="group relative flex items-center gap-4 rounded-xl p-4 transition-all duration-300"
               :class="{
-                'scale-[1.02]': appStore.currentTheme === key,
+                'scale-[1.02]': appStore.themePreference === option.key,
               }"
               :style="{
-                background: appStore.currentTheme === key
-                  ? 'color-mix(in srgb, ' + t.primary + ' 12%, transparent)'
+                background: appStore.themePreference === option.key
+                  ? 'color-mix(in srgb, ' + optionPrimary(option.key) + ' 12%, transparent)'
                   : 'color-mix(in srgb, var(--theme-text) 4%, transparent)',
-                border: '1px solid ' + (appStore.currentTheme === key ? t.primary : 'var(--theme-border)'),
+                border: '1px solid ' + (appStore.themePreference === option.key ? optionPrimary(option.key) : 'var(--theme-border)'),
               }"
-              @click="appStore.applyTheme(key as Theme); appStore.toggleThemePanel()"
+              @click="appStore.applyPreference(option.key); appStore.toggleThemePanel()"
             >
-              <!-- 预览圆 -->
               <div
                 class="flex h-12 w-12 flex-none items-center justify-center rounded-2xl"
-                :style="{ background: t.gradient }"
+                :style="{ background: optionGradient(option.key) }"
               >
-                <div :class="t.icon" class="text-lg text-white" />
+                <div :class="option.icon" class="text-lg text-white" />
               </div>
 
-              <!-- 文字 -->
               <div class="flex flex-col items-start text-left">
                 <span
                   class="text-sm font-bold"
                   :style="{ color: 'var(--theme-text)' }"
                 >
-                  {{ t.name }}
+                  {{ option.name }}
                 </span>
                 <span
                   class="text-xs opacity-60"
                   :style="{ color: 'var(--theme-text)' }"
                 >
-                  {{ t.isDark ? '深邃 · 光感夜幕' : '温暖 · 日光田野' }}
+                  {{ option.description }}
                 </span>
               </div>
 
-              <!-- 选中标记 -->
               <div
-                v-if="appStore.currentTheme === key"
+                v-if="appStore.themePreference === option.key"
                 class="ml-auto flex h-6 w-6 items-center justify-center rounded-full"
-                :style="{ background: t.primary }"
+                :style="{ background: optionPrimary(option.key) }"
               >
                 <div class="i-carbon-checkmark text-xs text-white" />
               </div>

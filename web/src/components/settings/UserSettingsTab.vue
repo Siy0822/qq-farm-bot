@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DeviceProtocolCard from '@/components/settings/DeviceProtocolCard.vue'
+import LogoutCard from '@/components/settings/LogoutCard.vue'
 import OfflineReminderCard from '@/components/settings/OfflineReminderCard.vue'
 import PasswordChangeCard from '@/components/settings/PasswordChangeCard.vue'
 
@@ -106,6 +107,8 @@ const offlineConfig = defineModel<OfflineReminderConfig>('offlineConfig', { requ
         @test="emit('testOffline')"
         @save="emit('saveOffline')"
       />
+
+      <LogoutCard />
     </div>
   </div>
 </template>

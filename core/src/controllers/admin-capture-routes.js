@@ -379,6 +379,9 @@ function scheduleCapturedAccountStart({
     try {
       if (isUpdate) {
         if (wasRunning) provider.restartAccount(account.id);
+        // 已存在但当前停止的账号也要拉起：Code 过期把账号停掉
+        // 恰恰是用户重新跑抓包流程的最常见原因。
+        else provider.startAccount(account.id);
       } else {
         provider.startAccount(account.id);
       }

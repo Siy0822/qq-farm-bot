@@ -90,7 +90,8 @@ function confirm() {
 </script>
 
 <template>
-  <Transition name="purchase-modal">
+  <Teleport to="body">
+    <Transition name="purchase-modal">
     <div
       v-if="show"
       class="purchase-modal-overlay"
@@ -189,7 +190,8 @@ function confirm() {
         </div>
       </div>
     </div>
-  </Transition>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -300,7 +302,7 @@ function confirm() {
 
 @media (max-width: 480px) {
   .purchase-modal-overlay {
-    align-items: flex-end;
+    align-items: center;
   }
 
   .purchase-modal {
