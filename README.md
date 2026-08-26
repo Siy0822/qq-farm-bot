@@ -1,36 +1,29 @@
-> 📦 **Go 重写版（单文件二进制 · 免 Node 环境）已发布，欢迎测试！**
->
-> 不想折腾 Node 环境的同学，可以直接用 Go 重写版源码编译出单文件二进制使用。
-> 仓库地址：https://github.com/Aoluis1005/QQ-farm-BOT-GO
-> 测试过程中遇到问题、建议或 Bug，请到该仓库提 **Issue**。
->
-> ⚠️ 测试版可能存在 Bug，请提 Issue 反馈；不含后台 / 卡密系统，仅限个人自用。
-
-# QQ Farm Bot Private
+# QQ Farm Bot
 
 > 🆓 **本项目完全免费 · 开源共享 · 拒绝一切收费**
 >
-> 本项目是**完全免费、开源**的 QQ 农场多账号挂机工具维护分支，**不收取任何费用**，也从未设置任何付费门槛或 VIP 限制。
+> 本项目是完全免费、开源的 QQ 农场多账号自动化工具，提供 Web 控制面板、账号管理、实时日志、数据统计、好友管理、活动、商城、图鉴和后台管理等功能。
 >
-> **关于倒卖 / 收费（请注意）**：任何「付费购买源码」「收费代部署」「付费授权」「倒卖牟利」等行为**均与作者本人无关**，并非作者所为。作者**从未授权**任何第三方以任何形式向他人收费或牟利。若你是通过付费渠道获取本项目，请知悉该费用与作者无关；因倒卖、转售造成的任何损失、账号风险或纠纷，作者概不负责。
-
-> 私有维护仓库。此仓库用于 QQ 农场多账号挂机工具的重构版源码维护，不包含运行时账号数据、用户数据和日志。
+> 本仓库是 `Siy0822/qq-farm-bot` 的独立维护仓库，用于持续维护农场主程序与 NapCat QQ 登录桥接。仓库不包含运行时账号数据、用户数据和日志。
 
 ## 简介
 
-这是一个基于 Node.js 的 QQ 农场自动化工具，提供多账号管理、Web 控制面板、实时日志、数据统计、好友管理、活动、商城、图鉴和后台管理等功能。
+这是一个基于 Node.js 的 QQ 农场自动化工具，支持多账号 Worker、Web 控制面板、NapCat QQ 扫码登录、应用宝登录、实时日志、自动重连以及丰富的农场功能。
 
-当前仓库定位为 `2.3.x` 重构维护版，重点是整理前后端结构、降低维护成本，并保留已有核心功能。
+当前仓库包含：
 
-> **派生说明**：本仓库是在 [cwser/qq-farm-bot-private](https://github.com/cwser/qq-farm-bot-private) 基础上进行的**二次修改（二改）**维护分支，在其版本之上增加了多账号 Worker 模型、Vue 3 控制面板重构、ACE 安全链路等内容。更早的上游原始项目见下方「特别感谢」。
+- QQ 农场主程序：`core/`
+- Vue 3 Web 控制面板：`web/`
+- NapCat QQ 登录桥接与容器配置：`napcat/`、`napcat-bridge/`
+- Docker Compose 部署配置：`docker-compose.yml`
 
 维护信息：
 
-- 仓库：`Aoluis1005/qq-farm-bot`
+- 仓库：`Siy0822/qq-farm-bot`
 - 维护分支：`main`
-- 完整更新日志参考：[QQ 农场更新日志](https://github.com/Aoluis1005/qq-farm-bot/blob/main/UPDATE_README.md)
+- 更新日志：[QQ 农场更新日志](https://github.com/Siy0822/qq-farm-bot/blob/main/UPDATE_README.md)
 
-> **注意**：本仓库为基于 [cwser/qq-farm-bot-private](https://github.com/cwser/qq-farm-bot-private) 的二改维护分支（原作者/上游信息见「特别感谢」）。以下所有功能与配置均以本仓库为准。
+> 以下所有功能、配置和部署方式均以本仓库为准。
 
 ## 当前状态
 
@@ -98,7 +91,7 @@
 ## 快速启动
 
 ```powershell
-git clone https://github.com/Aoluis1005/qq-farm-bot.git
+git clone https://github.com/Siy0822/qq-farm-bot.git
 cd qq-farm-bot
 
 corepack enable
@@ -126,7 +119,7 @@ pnpm dev:core
 > **注意**：二进制发布版（exe）与纯源码运行**不包含** yyb-go，仍需自行部署该 Go 服务并填写接口地址。
 
 ```bash
-git clone https://github.com/Aoluis1005/qq-farm-bot.git
+git clone https://github.com/Siy0822/qq-farm-bot.git
 cd qq-farm-bot
 
 docker compose up -d --build
@@ -215,7 +208,7 @@ chmod +x ./qq-farm-bot
 ## 项目结构
 
 ```text
-qq-farm-bot-private/
+qq-farm-bot/
 ├── core/                  # 后端（Node.js 机器人引擎）
 │   ├── src/
 │   │   ├── config/        # 配置管理
@@ -232,7 +225,9 @@ qq-farm-bot-private/
 │   │   ├── components/    # Vue 组件
 │   │   ├── stores/        # Pinia 状态管理
 │   │   └── views/         # 页面视图
-├── docker-compose.yml
+├── napcat/                # NapCat 容器、启动脚本与农场补丁
+├── napcat-bridge/         # QQ 扫码、快速登录与 OpenAuth 桥接服务
+├── docker-compose.yml     # 农场主服务与 NapCat 多容器编排
 ├── pnpm-workspace.yaml
 └── package.json
 ```
@@ -265,19 +260,14 @@ pnpm package:release
 - 后端入口只保留 wiring，具体接口逻辑优先下沉到领域路由、helper 或 service。
 - 中文显示异常时先确认文件真实 UTF-8 内容，不要只按终端乱码判断。
 
-## 特别感谢
+## 维护与致谢
 
-- **本仓库基于 [cwser/qq-farm-bot-private](https://github.com/cwser/qq-farm-bot-private) 二改**（在此版本基础上进行修改，是其下游维护分支）
-- 基于 [Penty-d/qq-farm-bot-ui](https://github.com/Penty-d/qq-farm-bot-ui) 二改
-- 核心功能：[linguo2625469/qq-farm-bot](https://github.com/linguo2625469/qq-farm-bot)
-- 部分功能：[QianChenJun/qq-farm-bot](https://github.com/QianChenJun/qq-farm-bot)
-- 扫码登录：[lkeme/QRLib](https://github.com/lkeme/QRLib)
-- 推送通知：[imaegoo/pushoo](https://github.com/imaegoo/pushoo)
+本仓库由 `Siy0822` 独立维护，功能、配置和部署方式以本仓库为准。项目使用的相关开源组件与协议请以各自项目说明为准。
 
 ## 免责声明
 
 本项目仅供学习与研究用途。使用本工具可能违反游戏服务条款，由此产生的一切后果由使用者自行承担。
 
 - **关于倒卖**：本项目为开源学习项目，**任何付费倒卖、商业售卖、付费代部署、收费授权等行为均与作者无关**。作者从未授权任何第三方以任何形式向他人收费或牟利。若你通过付费渠道获取本项目，请知悉该费用与作者无关，因倒卖、二次转售造成的损失、账号风险或纠纷，作者不承担任何责任。
-- **关于源码**：本仓库为二改维护分支，基于上游项目修改而来，相关版权与致谢见「特别感谢」。请遵守上游项目的开源协议。
+- **关于源码**：本仓库由 `Siy0822` 独立维护，项目中使用的第三方组件和代码请遵守其各自的开源协议。
 - **风险自担**：部署、使用本项目产生的任何封号、数据丢失、法律或其他后果，均由使用者自行承担，作者不作任何担保。
