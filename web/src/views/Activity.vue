@@ -9,6 +9,8 @@ import HeluExchangePanel from '@/components/activity/HeluExchangePanel.vue'
 import HeluPassportPanel from '@/components/activity/HeluPassportPanel.vue'
 import HeluSolarTermsPanel from '@/components/activity/HeluSolarTermsPanel.vue'
 import QixiActivityPanel from '@/components/activity/QixiActivityPanel.vue'
+import YuluActivityPanel from '@/components/activity/YuluActivityPanel.vue'
+import HonghuaActivityPanel from '@/components/activity/HonghuaActivityPanel.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityStore } from '@/stores/activity'
@@ -100,6 +102,12 @@ const {
   qixiError,
 } = storeToRefs(activityStore)
 
+// 上游活动占位入口：只展示已确认的前端信息，不调用未抓包的后端协议。
+const seasonalActivityTabs = computed<ActivitySection[]>(() => [
+  { key: 'yulu', label: '雨落成诗', icon: '🌧️' },
+  { key: 'honghua', label: '公益小红花', icon: '🌸' },
+])
+
 // 自动领取开关：localStorage 持久化，默认开启
 const AUTO_CLAIM_KEY = 'guanxing_auto_claim'
 const autoClaim = ref(localStorage.getItem(AUTO_CLAIM_KEY) !== '0')
@@ -138,6 +146,7 @@ const sectionTabs = computed<ActivitySection[]>(() => [
   ...(SHOW_QIXI_ACTIVITY
     ? [{ key: 'qixi' as const, label: '鹊桥寄情', icon: 'i-carbon-favorite', count: qixiActivity.value?.claimableTierCount || 0 }]
     : []),
+  ...seasonalActivityTabs.value,
 ])
 const activeError = computed(() => heluError.value
   || (activeSection.value === 'journey' ? guanxingError.value : '')
@@ -508,6 +517,10 @@ onMounted(() => {
           @gift="giftQixiSachet"
           @load-friends="loadQixiFriends"
         />
+
+        <YuluActivityPanel v-else-if="activeSection === 'yulu'" />
+
+        <HonghuaActivityPanel v-else-if="activeSection === 'honghua'" />
 
         <ActivitySubActivityPanel
           v-else-if="activeSubActivity"
