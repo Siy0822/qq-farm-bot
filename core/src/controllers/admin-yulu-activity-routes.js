@@ -18,7 +18,14 @@ function registerAdminYuluActivityRoutes({ app, provider, getAccountIdFromReques
   });
   app.post('/api/activity/yulu/mutate', async (req, res) => {
     const id = guard(req, res, '闪电变异失败'); if (!id) return;
-    res.json({ ok: false, accountId: id, error: '闪电变异 Use 的地块协议待客户端报文确认，未执行任何操作' });
+    try { res.json({ ok: true, accountId: id, data: await provider.mutateYulu(id) }); } catch (err) { sendProviderError(res, err); }
+  });
+  app.post('/api/activity/yulu/use', async (req, res) => {
+    const id = guard(req, res, '使用雨落成诗物品失败'); if (!id) return;
+    try {
+      const body = req.body || {};
+      res.json({ ok: true, accountId: id, data: await provider.useYulu(id, body.itemId, body.hostGid, body.landIds) });
+    } catch (err) { sendProviderError(res, err); }
   });
   app.post('/api/activity/yulu/research', async (req, res) => {
     const id = guard(req, res, '气象研究失败'); if (!id) return;

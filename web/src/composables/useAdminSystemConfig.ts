@@ -41,7 +41,7 @@ interface UseAdminSystemConfigOptions {
 
 const defaultSystemConfigValues: SystemConfig = {
   serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
-  clientVersion: '1.13.2.10_20260723',
+  clientVersion: '1.13.3.14_20260827',
   platform: 'qq',
   os: 'iOS',
 }

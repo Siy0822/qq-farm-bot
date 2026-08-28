@@ -180,6 +180,15 @@ function getPlantSizeText(targetLand: any) {
     />
 
     <div
+      v-if="Number(land.purpleCrystalResonanceExpBonus) > 0"
+      class="absolute bottom-1 left-1 z-10 inline-flex items-center gap-0.5 rounded bg-purple-100/90 px-1 py-0.5 text-[9px] text-purple-700 font-semibold dark:bg-purple-900/60 dark:text-purple-200"
+      title="紫晶土地变异作物经验加成"
+    >
+      <img :src="'/game-config/seed_images_named/mutant/crystal.png'" alt="紫晶共鸣" class="h-3 w-3 object-contain">
+      紫晶共鸣 +{{ Number(land.purpleCrystalResonanceExpBonus) / 100 }}%
+    </div>
+
+    <div
       v-if="mutantEffects.length > 0"
       class="absolute left-1 top-5 flex flex-col gap-1"
     >

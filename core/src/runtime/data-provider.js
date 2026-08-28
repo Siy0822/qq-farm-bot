@@ -187,6 +187,8 @@ function createDataProvider(deps) {
         claimGuanxingRewards: (ref) => callWorkerApi(resolveAccountId(ref), 'claimGuanxingRewards'),
         getYuluActivity: (ref) => callWorkerApi(resolveAccountId(ref), 'getYuluActivity'),
         openYuluItem: (ref, itemId) => callWorkerApi(resolveAccountId(ref), 'openYuluItem', itemId),
+        mutateYulu: (ref) => callWorkerApi(resolveAccountId(ref), 'mutateYulu'),
+        useYulu: (ref, itemId, hostGid, landIds) => callWorkerApi(resolveAccountId(ref), 'useYulu', itemId, hostGid, landIds || []),
         researchYulu: (ref, nodeId) => callWorkerApi(resolveAccountId(ref), 'researchYulu', nodeId),
         exchangeYulu: (ref) => callWorkerApi(resolveAccountId(ref), 'exchangeYulu'),
 

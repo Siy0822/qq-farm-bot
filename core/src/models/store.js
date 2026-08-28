@@ -3,6 +3,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { getDataFile, ensureDataDir } = require('../config/runtime-paths');
 const { readTextFile, readJsonFile, writeJsonFileAtomic } = require('../services/json-db');
+const { getDefaultSystemConfig } = require('../config/config');
+
+function versionDate(value) {
+    const match = String(value || '').match(/_(\d{8})$/);
+    return match ? Number(match[1]) : 0;
+}
+
+function clientVersionStale(value) {
+    return versionDate(getDefaultSystemConfig().clientVersion) > versionDate(value);
+}
 
 // ==================== 文件路径 ====================
 
@@ -874,6 +884,9 @@ function loadGlobalConfig() {
                 platform: String(data.systemConfig.platform || 'qq').trim(),
                 os: String(data.systemConfig.os || 'iOS').trim()
             };
+        }
+        if (globalConfig.systemConfig && clientVersionStale(globalConfig.systemConfig.clientVersion)) {
+            globalConfig.systemConfig.clientVersion = getDefaultSystemConfig().clientVersion;
         }
 
         // 登录页链接

@@ -1003,6 +1003,14 @@ async function handleApiCall(msg) {
                 result = await require('../services/yulu').openYuluItem(args[0]);
                 break;
             }
+            case 'mutateYulu': {
+                result = await require('../services/yulu').mutateYulu();
+                break;
+            }
+            case 'useYulu': {
+                result = await require('../services/yulu').useYulu(args[0], args[1], args[2], args[3]);
+                break;
+            }
             case 'researchYulu': {
                 result = await require('../services/yulu').researchYulu(args[0]);
                 break;

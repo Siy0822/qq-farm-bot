@@ -456,9 +456,12 @@ async function getLandsDetail() {
       const needBug = (plant.insect_owners && plant.insect_owners.length > 0) ||
         (toTimeSec(currentPhase.insect_time) > 0 && toTimeSec(currentPhase.insect_time) <= serverTime);
 
-      // 变异效果
+      // 变异效果与紫晶共鸣。协议中的经验加成以万分比记录（2500 = 25%）。
       const mutantConfigIds = plant.mutant_config_ids || [];
       const mutantEffects = getMutantEffectsByIds(mutantConfigIds);
+      const purpleCrystalResonanceExpBonus = level === 5 && mutantConfigIds.length > 0
+        ? toNum(land?.buff?.plant_exp_bonus)
+        : 0;
 
       details.push({
         id: landId, unlocked: true, status,
@@ -470,7 +473,7 @@ async function getLandsDetail() {
         level, maxLevel, landsLevel, landSize, landType, landTypeName,
         couldUnlock, couldUpgrade,
         occupiedByMaster, masterLandId, occupiedLandIds,
-        plantSize, mutantEffects
+        plantSize, mutantEffects, purpleCrystalResonanceExpBonus
       });
     }
 
