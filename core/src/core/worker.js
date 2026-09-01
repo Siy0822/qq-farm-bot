@@ -1019,6 +1019,22 @@ async function handleApiCall(msg) {
                 result = await require('../services/yulu').exchangeYulu();
                 break;
             }
+            case 'getHonghuaActivity': {
+                result = await require('../services/honghua').getHonghuaActivity();
+                break;
+            }
+            case 'sendHonghuaLove': {
+                result = await require('../services/honghua').sendHonghuaLove();
+                break;
+            }
+            case 'sendHonghuaFund': {
+                result = await require('../services/honghua').sendHonghuaFund();
+                break;
+            }
+            case 'claimHonghuaReward': {
+                result = await require('../services/honghua').claimHonghuaReward(args[0], args[1]);
+                break;
+            }
             case 'getServerVersion': {
                 const { types } = require('../utils/proto');
                 const { body } = await sendMsgAsync('gamepb.gamepb.LoginService', 'GetLoginInfo', Buffer.alloc(0), 5000);

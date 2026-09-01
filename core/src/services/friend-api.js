@@ -939,7 +939,7 @@ function parseTimeToMinutes(timeStr) {
   return h * 60 + m;
 }
 
-/** Check if the current time falls within the friend quiet hours. */
+/** Check if the current time falls within the friend quiet hours (always Beijing time). */
 function inFriendQuietHours(now = new Date()) {
   const { getFriendQuietHours } = require('../models/store');
   const quietHours = getFriendQuietHours();
@@ -949,7 +949,16 @@ function inFriendQuietHours(now = new Date()) {
   const endMin = parseTimeToMinutes(quietHours.end);
   if (startMin === null || endMin === null) return false;
 
-  const currentMin = now.getHours() * 60 + now.getMinutes();
+  // Do not depend on the host/container TZ: quiet-hour settings are defined in UTC+8.
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Shanghai',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now);
+  const hour = Number(parts.find(part => part.type === 'hour')?.value || 0);
+  const minute = Number(parts.find(part => part.type === 'minute')?.value || 0);
+  const currentMin = hour * 60 + minute;
 
   if (startMin === endMin) return true; // All-day quiet
   if (startMin < endMin) {

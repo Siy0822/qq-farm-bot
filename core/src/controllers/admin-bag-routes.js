@@ -30,8 +30,13 @@ function requireAccessibleAccount(
 }
 
 function getItemName(itemId) {
+  const activityItemNames = {
+    1040: "爱心值",
+    20883: "小红花种子",
+  };
   const info = getItemById(itemId);
   if (info?.name) return info.name;
+  if (activityItemNames[itemId]) return activityItemNames[itemId];
   // ItemInfo 缺失时统一回退到 Plant.json（种子 / 果实 / 变异果实均已收录）
   const seedPlant = getPlantBySeedId(itemId);
   if (seedPlant?.name) return `${seedPlant.name}种子`;
