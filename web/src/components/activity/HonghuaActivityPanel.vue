@@ -38,7 +38,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const response = await api.get('/activity/honghua')
+    const response = await api.get('/api/activity/honghua')
     if (response.data?.ok === false)
       throw new Error(response.data?.error || '加载公益小红花失败')
     activity.value = response.data?.activity || response.data?.data || null
@@ -72,7 +72,7 @@ async function run(name: string, url: string, body: any = {}) {
 
 function donateFund() {
   const confirmed = window.confirm('送出公益金会产生真实 1 元扣款，且活动期通常仅有一次资格。确定继续吗？')
-  if (confirmed) run('送出公益金', '/activity/honghua/fund', { confirmed: true })
+  if (confirmed) run('送出公益金', '/api/activity/honghua/fund', { confirmed: true })
 }
 
 onMounted(load)
@@ -112,9 +112,9 @@ onMounted(load)
     </section>
 
     <section class="flex flex-wrap gap-2 rounded-xl glass-subtle p-4">
-      <button class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="!!action" @click="run('送出爱心值', '/activity/honghua/love')">💖 {{ action === '送出爱心值' ? '处理中…' : '送出爱心值' }}</button>
+      <button class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="!!action" @click="run('送出爱心值', '/api/activity/honghua/love')">💖 {{ action === '送出爱心值' ? '处理中…' : '送出爱心值' }}</button>
       <button class="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="!!action || activity?.fundClaimed" @click="donateFund">💛 {{ activity?.fundClaimed ? '已送出公益金' : action === '送出公益金' ? '处理中…' : '送出公益金 · 真实扣款 1 元' }}</button>
-      <button class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200" :disabled="!!action" @click="run('领取分享奖励', '/activity/honghua/claim', { kind: 'share' })">领取分享奖励</button>
+      <button class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200" :disabled="!!action" @click="run('领取分享奖励', '/api/activity/honghua/claim', { kind: 'share' })">领取分享奖励</button>
     </section>
 
     <section class="rounded-xl glass-subtle p-4">
@@ -125,7 +125,7 @@ onMounted(load)
             <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ tier.threshold }} 爱心值</span>
             <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">{{ tier.itemName || `物品 ${tier.itemId}` }} ×{{ tier.count || 0 }}</span>
           </div>
-          <button class="rounded-lg px-3 py-1.5 text-xs font-semibold" :class="tier.claimable ? 'bg-rose-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'" :disabled="!!action || !tier.claimable" @click="run(`领取 ${tier.threshold} 档`, '/activity/honghua/claim', { kind: 'tier', tier: tier.threshold })">{{ tier.claimable ? '领取' : '未达成' }}</button>
+          <button class="rounded-lg px-3 py-1.5 text-xs font-semibold" :class="tier.claimable ? 'bg-rose-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'" :disabled="!!action || !tier.claimable" @click="run(`领取 ${tier.threshold} 档`, '/api/activity/honghua/claim', { kind: 'tier', tier: tier.threshold })">{{ tier.claimable ? '领取' : '未达成' }}</button>
         </div>
       </div>
     </section>
