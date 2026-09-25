@@ -45,3 +45,11 @@ message BatchClaimEmailRequest {
 message BatchClaimEmailReply {
     repeated corepb.Item items = 1;
 }
+
+// ==== appended from upstream 1.14.2.11_20260922 ====
+message BatchDeleteEmailRequest {
+    int32 box_type = 1;
+    repeated string email_ids = 2;
+}
+
+message BatchDeleteEmailReply {}

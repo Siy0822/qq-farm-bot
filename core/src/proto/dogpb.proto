@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package gamepb.dogpb;
 
+import "corepb.proto";
 message DogInfo {
     int64 id = 1;
     int64 expire_time = 3;
@@ -26,3 +27,104 @@ message DogFood {
     int64 duration = 2;
     int32 count = 3;
 }
+
+// ==== appended from upstream 1.14.2.11_20260922 ====
+message DogItem {
+    int64 id = 1;
+    int64 duration = 2;
+    // 抓包中三种狗粮均固定返回 1，而同一时刻背包只持有其中一种，
+    // 因此这是状态位，不是库存；库存必须读取 ItemService.Bag。
+    int64 status = 3;
+}
+
+message DogSkillUsage {
+    int64 skill_id = 1;
+    int64 used_count = 2;
+    int64 daily_limit = 3;
+    int64 dog_id = 4;
+}
+
+message ActivateDogRequest {
+    int64 dog_id = 1;
+}
+
+message ActivateDogReply {
+    DogInfo dog = 1;
+}
+
+message DeployDogRequest {
+    int64 dog_id = 1;
+}
+
+message DeployDogReply {
+    int64 dog_id = 1;
+}
+
+message WithdrawDogRequest {}
+
+message WithdrawDogReply {
+    int64 dog_id = 1;
+}
+
+message AddFoodRequest {
+    int64 item_id = 1;
+    int64 count = 2;
+}
+
+message AddFoodReply {
+    // 使用后的狗粮剩余秒数。
+    int64 protect_time = 1;
+}
+
+message ClaimSkillGiftsRequest {}
+
+message ClaimSkillGiftsReply {
+    corepb.Item item = 1;
+    int64 claimed_count = 3;
+}
+
+message PendingGiftCountNotify {
+    int64 count = 1;
+}
+
+message GetProtectLogsRequest {
+    // 字段 1/3 的业务语义尚未证明；仅按真实点击的 0/100/0 发送。
+    int64 field_1 = 1;
+    int64 count = 2;
+    int64 field_3 = 3;
+}
+
+message ProtectLogDisplayItem {
+    int64 item_id = 1;
+    int64 count = 2;
+    int64 field_4 = 4;
+}
+
+message ProtectLogExtra {
+    bytes value = 1;
+}
+
+message ProtectLogEntry {
+    int64 friend_gid = 1;
+    string friend_name = 2;
+    string friend_avatar = 3;
+    // Unix 秒级时间戳。
+    int64 timestamp = 5;
+    // 实际记录中分别对应被扣数量和守护所得金币。
+    int64 stolen_count = 6;
+    int64 protected_gold = 7;
+    int64 dog_id = 8;
+    string dog_name = 9;
+    int64 friend_role_id = 10;
+    int64 field_12 = 12;
+    int64 field_13 = 13;
+    repeated ProtectLogDisplayItem display_items = 14;
+    ProtectLogExtra extra = 20;
+}
+
+message GetProtectLogsReply {
+    repeated ProtectLogEntry logs = 1;
+    int64 total = 2;
+}
+
+message NewProtectLogNotify {}

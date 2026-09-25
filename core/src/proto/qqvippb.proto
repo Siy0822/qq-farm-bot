@@ -22,3 +22,24 @@ message ClaimQQVipRewardsRequest {
 message ClaimQQVipRewardsReply {
     repeated corepb.Item items = 1;  // 奖励物品列表
 }
+
+// ==== appended from upstream 1.14.2.11_20260922 ====
+message QQVipRewardStatus {
+    int32 type = 1;
+    repeated corepb.Item rewards = 2;
+    bool is_enable = 3;
+    int64 activity_id = 4;
+    int64 reward_type = 5;
+    int64 reward_multiplier = 6;
+    int64 begin_time = 7;
+    int64 end_time = 8;
+}
+
+message RefreshVipInfoRequest {}
+
+message RefreshVipInfoReply {}
+
+message VipInfoUpdatedNTF {
+    int64 vip_type = 1;
+    int64 vip_level = 2;
+}

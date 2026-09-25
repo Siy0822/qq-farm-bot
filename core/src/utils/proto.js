@@ -47,6 +47,24 @@ async function loadProto() {
         getResourcePath('proto', 'activitypb.proto'),
         getResourcePath('proto', 'mysteryshoppb.proto'),
         getResourcePath('proto', 'acepb.proto'),
+        // ==== 从上游 1.14.2.11_20260922 新增（2026-09-26 移植）====
+        getResourcePath('proto', 'weatherpb.proto'),
+        getResourcePath('proto', 'seasonpb.proto'),
+        getResourcePath('proto', 'solartermspb.proto'),
+        getResourcePath('proto', 'randomdroppb.proto'),
+        getResourcePath('proto', 'guidepb.proto'),
+        getResourcePath('proto', 'skinpb.proto'),
+        getResourcePath('proto', 'avatarframepb.proto'),
+        getResourcePath('proto', 'bulletinboardpb.proto'),
+        getResourcePath('proto', 'marqueepb.proto'),
+        getResourcePath('proto', 'paypb.proto'),
+        getResourcePath('proto', 'rechargebonuspb.proto'),
+        getResourcePath('proto', 'uicproxypb.proto'),
+        getResourcePath('proto', 'mutantpb.proto'),
+        getResourcePath('proto', 'miscpb.proto'),
+        getResourcePath('proto', 'achievepb.proto'),
+        getResourcePath('proto', 'autumn-activities.proto'),
+        getResourcePath('proto', 'pet-diary.proto'),
     ], { keepCase: true });
 
     // 网关

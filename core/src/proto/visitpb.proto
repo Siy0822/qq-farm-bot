@@ -3,6 +3,7 @@ syntax = "proto3";
 package gamepb.visitpb;
 
 import "plantpb.proto";
+import "weatherpb.proto";
 import "userpb.proto";
 
 // ============ 访问好友农场服务 ============

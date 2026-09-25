@@ -71,3 +71,25 @@ message ClaimMonthCardRewardRequest {
 message ClaimMonthCardRewardReply {
   repeated corepb.Item items = 1;
 }
+
+// ==== appended from upstream 1.14.2.11_20260922 ====
+message PurchaseLimit {
+  int32 limit_type = 1;    // 1=daily, 4=activity-period in the captured products.
+  int64 bought_count = 2;
+  int64 limit_count = 3;
+}
+
+message MallShareInfo {
+  int64 share_id = 1;
+  int64 share_free_count = 2;
+  int32 share_status = 3;
+  bool share_only = 4;
+}
+
+message ProductsHasChangedNotify {
+  int32 slot_type = 1;
+}
+
+message NeedNotify {
+  int32 need_type = 1;
+}

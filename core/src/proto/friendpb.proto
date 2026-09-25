@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package gamepb.friendpb;
 
+import "avatarframepb.proto";
+import "weatherpb.proto";
 // ============ 好友农场摘要信息 ============
 message Plant {
     int64 dry_time_sec = 1;      // 缺水倒计时秒
@@ -147,3 +149,43 @@ message FriendAddedNotify {
 }
 
 // ============ 主动申请加好友 (从 Telnix 反编译) ============
+
+// ==== appended from upstream 1.14.2.11_20260922 ====
+message FriendIllustrated {
+    int64 current = 1;
+    int64 target = 2;
+}
+
+message FriendTitle {
+    int64 title_id = 1;
+}
+
+message FriendActivity {
+    int64 activity_id = 1;
+    int64 progress = 2;
+    int64 updated_at = 3;
+}
+
+message RecommendedFriend {
+    int64 gid = 1;
+    string name = 2;
+    string avatar_url = 3;
+    int64 level = 4;
+    int64 updated_at = 5;
+    string open_id = 6;
+}
+
+message GetGameFriendsReply {
+    repeated GameFriend game_friends = 1;
+    int64 application_count = 3;
+}
+
+message GetShareKeyRequest {
+    int64 share_cfg_id = 1;
+}
+
+message GetShareKeyReply {
+    string share_key = 1;
+    string share_url = 2;
+    int64 share_cfg_id = 3;
+}

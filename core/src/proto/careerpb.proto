@@ -35,3 +35,9 @@ message CareerInfoGetReply {
   int32 achieved_levels = 13;           // 玩家达成等级数
   string openid = 15;                   // 玩家 openid
 }
+
+// ==== appended from upstream 1.14.2.11_20260922 ====
+message CareerHarvestItem {
+    int64 fruit_id = 1;
+    int64 harvest_count = 2;
+}

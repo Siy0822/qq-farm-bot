@@ -326,3 +326,78 @@ message LandsNotify {
     repeated LandInfo lands = 1;   // 变化的土地列表
     int64 host_gid = 2;            // 农场主GID
 }
+
+// ==== appended from upstream 1.14.2.11_20260922 ====
+message StealPlayer {
+    int64 gid = 1;                  // 偷菜者GID
+    int64 num = 2;                  // 已偷次数
+}
+
+message PlantInteractionUseInfo {
+    int64 item_id = 1;
+    int64 count = 2;
+    int64 effect_type = 3;
+    int64 host_gid = 4;
+    int64 timestamp = 5;
+}
+
+message PlantInteractionTargetInfo {
+    int64 item_id = 1;
+    int64 host_gid = 2;
+    int64 timestamp = 3;
+    int64 land_id = 4;
+}
+
+message PlantExtendedStatus {
+    int64 value_1 = 1;
+    int64 value_2 = 2;
+}
+
+message PlantMutationRecord {
+    int64 timestamp = 1;
+    int64 mutant_config_id = 2;
+    int64 field_3 = 3;
+    int64 field_4 = 4;
+    int64 field_5 = 5;
+    int64 field_6 = 6;
+}
+
+message PlantLimitInfo {
+    int64 config_id = 1;                       // 配置ID (如1001)
+    int64 limit = 2;                           // 限制值 (如300)
+    int64 value = 3;                           // 当前值 (如1020184)
+}
+
+message PlantActivityInfo {
+    int64 activity_id = 1;                     // 活动ID (如1019)
+    int64 param1 = 2;                          // 参数1 (如240)
+    int64 param2 = 3;                          // 参数2 (如191)
+    int64 date = 4;                            // 日期 (如2026060100)
+}
+
+message FarmSocialEvent {
+    int64 item_id = 1;
+    int64 visitor_gid = 2;
+    int64 timestamp = 3;
+}
+
+message FarmingSocialEventReward {
+    int64 item_id = 1;
+    corepb.Item reward = 2;
+}
+
+message FertilizerUse {
+    int64 field_1 = 1;
+    corepb.Item consumed = 3;
+}
+
+message ItemChange {
+    int64 land_id = 1;
+    int64 item_id = 2;
+    int64 count = 3;
+}
+
+message FarmSocialEventsNotify {
+    repeated FarmSocialEvent social_events = 1;
+    int64 host_gid = 2;
+}
