@@ -161,6 +161,8 @@ function createDataProvider(deps) {
 
         // ========== Mall ==========
         getMallGoods: (ref) => callWorkerApi(resolveAccountId(ref), 'getMallGoods'),
+        getSvipCatalog: (ref) => callWorkerApi(resolveAccountId(ref), 'getSvipCatalog'),
+        purchaseSvipGoods: (ref, goodsId, count, expectedPrice) => callWorkerApi(resolveAccountId(ref), 'purchaseSvipGoods', goodsId, count, expectedPrice),
         buyMallGoods: (ref, goodsId, count) => callWorkerApi(resolveAccountId(ref), 'buyMallGoods', goodsId, count),
         getMysteryShop: (ref) => callWorkerApi(resolveAccountId(ref), 'getMysteryShop'),
         buyMysteryShopGoods: (ref, npcId) => callWorkerApi(resolveAccountId(ref), 'buyMysteryShopGoods', npcId),

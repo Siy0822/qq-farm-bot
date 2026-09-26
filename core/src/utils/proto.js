@@ -143,6 +143,11 @@ async function loadProto() {
     types.GetMallListBySlotTypeRequest = root.lookupType('gamepb.mallpb.GetMallListBySlotTypeRequest');
     types.GetMallListBySlotTypeResponse = root.lookupType('gamepb.mallpb.GetMallListBySlotTypeResponse');
     types.MallGoods = root.lookupType('gamepb.mallpb.MallGoods');
+    // SVIP 分页专用：官方 price/limit 是 corepb.Item/PurchaseLimit，与本地 bytes 版 MallGoods 不同，
+    // 并列新增以免砸掉在跑的化肥购买链路。
+    types.MallGoodsV2 = root.lookupType('gamepb.mallpb.MallGoodsV2');
+    types.PurchaseResponseV2 = root.lookupType('gamepb.mallpb.PurchaseResponseV2');
+    types.MallPurchaseLimit = root.lookupType('gamepb.mallpb.PurchaseLimit');
     types.PurchaseRequest = root.lookupType('gamepb.mallpb.PurchaseRequest');
     types.PurchaseResponse = root.lookupType('gamepb.mallpb.PurchaseResponse');
     types.GetActiveMysteryNPCRequest = root.lookupType('gamepb.mysteryshoppb.GetActiveNPCRequest');
@@ -155,6 +160,8 @@ async function loadProto() {
     types.GetQQVipRewardsStatusReply = root.lookupType('gamepb.qqvippb.GetQQVipRewardsStatusReply');
     types.ClaimQQVipRewardsRequest = root.lookupType('gamepb.qqvippb.ClaimQQVipRewardsRequest');
     types.ClaimQQVipRewardsReply = root.lookupType('gamepb.qqvippb.ClaimQQVipRewardsReply');
+    types.RefreshVipInfoRequest = root.lookupType('gamepb.qqvippb.RefreshVipInfoRequest');
+    types.RefreshVipInfoReply = root.lookupType('gamepb.qqvippb.RefreshVipInfoReply');
     types.CheckCanShareRequest = root.lookupType('gamepb.sharepb.CheckCanShareRequest');
     types.CheckCanShareReply = root.lookupType('gamepb.sharepb.CheckCanShareReply');
     types.ReportShareRequest = root.lookupType('gamepb.sharepb.ReportShareRequest');

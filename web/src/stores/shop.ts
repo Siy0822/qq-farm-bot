@@ -72,11 +72,40 @@ export interface MysteryShopOffer {
   endTime: number
 }
 
+export interface SvipMallGoods {
+  id: number
+  name: string
+  type: number
+  rewards: Array<{ id: number, count: number, name: string, image?: string }>
+  price: { id: number, count: number, name: string, image?: string, balance: number | null }
+  originalPrice: number | null
+  isFree: boolean
+  limit: { type: number, bought: number, max: number, remaining: number } | null
+  isLimited: boolean
+  purchaseStatus: string
+  unavailableReason: string
+  discountText: string
+  isDiscounted: boolean
+  discountEndTime: number
+  available: boolean
+  purchasable: boolean
+}
+
+export interface SvipMallCatalog {
+  slotType: number
+  membership: { isSvip: boolean, remainingDays: number, mallFreeCanClaim: boolean } | null
+  serverTime: number
+  refreshCountdown: number
+  currencies: Array<{ id: number, count: number, name: string, balanceKnown: boolean }>
+  goods: SvipMallGoods[]
+}
+
 export const useShopStore = defineStore('shop', () => {
   const seeds = ref<ShopSeedItem[]>([])
   const pets = ref<ShopPetItem[]>([])
   const decorations = ref<ShopDecorationItem[]>([])
   const mallGoods = ref<ShopMallItem[]>([])
+  const svipCatalog = ref<SvipMallCatalog | null>(null)
   const mysteryOffer = ref<MysteryShopOffer | null>(null)
   const mysteryOfferAccountId = ref('')
 
@@ -84,12 +113,14 @@ export const useShopStore = defineStore('shop', () => {
   const petLoading = ref(false)
   const decorationLoading = ref(false)
   const mallLoading = ref(false)
+  const svipLoading = ref(false)
   const mysteryLoading = ref(false)
 
   const error = ref('')
   const petError = ref('')
   const decorationError = ref('')
   const mallError = ref('')
+  const svipError = ref('')
   const mysteryError = ref('')
 
   const userGold = ref(0)
@@ -100,6 +131,7 @@ export const useShopStore = defineStore('shop', () => {
   let petRequestId = 0
   let decorationRequestId = 0
   let mallRequestId = 0
+  let svipRequestId = 0
   let mysteryRequestId = 0
 
   function clearShopData() {
@@ -107,17 +139,20 @@ export const useShopStore = defineStore('shop', () => {
     pets.value = []
     decorations.value = []
     mallGoods.value = []
+    svipCatalog.value = null
     mysteryOffer.value = null
     mysteryOfferAccountId.value = ''
     loading.value = false
     petLoading.value = false
     decorationLoading.value = false
     mallLoading.value = false
+    svipLoading.value = false
     mysteryLoading.value = false
     error.value = ''
     petError.value = ''
     decorationError.value = ''
     mallError.value = ''
+    svipError.value = ''
     mysteryError.value = ''
     userGold.value = 0
     userGoldBean.value = 0
@@ -304,6 +339,47 @@ export const useShopStore = defineStore('shop', () => {
     return data
   }
 
+  async function fetchSvipMall(accountId: string) {
+    if (!accountId)
+      return
+    const requestedId = String(accountId)
+    const requestId = ++svipRequestId
+    svipLoading.value = true
+    svipError.value = ''
+    try {
+      const { data } = await api.get('/api/shop/svip', {
+        headers: { 'x-account-id': accountId },
+      })
+      if (requestId !== svipRequestId || !isCurrentAccount(requestedId))
+        return
+      if (data.ok) {
+        svipCatalog.value = data.data || null
+      }
+      else {
+        svipError.value = data.error || '获取 SVIP 商城失败'
+      }
+    }
+    catch (err: any) {
+      if (requestId === svipRequestId && isCurrentAccount(requestedId))
+        svipError.value = err.message || '获取 SVIP 商城失败'
+    }
+    finally {
+      if (requestId === svipRequestId)
+        svipLoading.value = false
+    }
+  }
+
+  async function buySvipGoods(accountId: string, goodsId: number, count: number, expectedPrice?: { id: number, count: number }) {
+    const { data } = await api.post('/api/shop/svip/buy', {
+      goodsId,
+      count,
+      expectedPrice,
+    }, {
+      headers: { 'x-account-id': accountId },
+    })
+    return data
+  }
+
   async function buyMysteryShopGoods(accountId: string, npcId: number) {
     const { data } = await api.post('/api/shop/mystery/buy', {
       npcId,
@@ -327,6 +403,7 @@ export const useShopStore = defineStore('shop', () => {
       fetchDecorations(accountId),
       fetchMall(accountId),
       fetchMysteryShop(accountId),
+      fetchSvipMall(accountId),
     ])
   }
 
@@ -335,17 +412,20 @@ export const useShopStore = defineStore('shop', () => {
     pets,
     decorations,
     mallGoods,
+    svipCatalog,
     mysteryOffer,
     mysteryOfferAccountId,
     loading,
     petLoading,
     decorationLoading,
     mallLoading,
+    svipLoading,
     mysteryLoading,
     error,
     petError,
     decorationError,
     mallError,
+    svipError,
     mysteryError,
     userGold,
     userGoldBean,
@@ -355,10 +435,12 @@ export const useShopStore = defineStore('shop', () => {
     fetchPets,
     fetchDecorations,
     fetchMall,
+    fetchSvipMall,
     fetchMysteryShop,
     refreshAll,
     buyGoods,
     buyMallGoods,
+    buySvipGoods,
     buyMysteryShopGoods,
     abandonMysteryShop,
   }

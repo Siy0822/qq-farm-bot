@@ -10,17 +10,27 @@ import "corepb.proto";
 message GetQQVipRewardsStatusRequest {}
 
 message GetQQVipRewardsStatusReply {
-    bool has_gift = 1;      // 是否有礼包
-    bool can_claim = 2;     // 是否可以领取
+    // field 1：本地旧名 has_gift，官方 1.14.2.11 名 is_qq_vip（同一 wire 字段，语义同为会员资格位）。
+    bool is_qq_vip = 1;
+    bool can_claim = 2;
+    bool claimed_today = 3;
+    bool rewards_can_claim = 4;
+    repeated QQVipRewardStatus reward_statuses = 5;
+    bool has_redpoint = 6;
+    int64 remaining_days = 7;
+    int64 days_remaining_reminder = 8;
+    bool mall_free_can_claim = 9;
 }
 
 // --- 领取QQ会员礼包 ---
 message ClaimQQVipRewardsRequest {
-    repeated int32 vip_types = 1;  // 1: QQ会员，2: 超级会员
+    // field 1：本地旧名 vip_types，官方名 reward_types（同字段，packed varint）。
+    repeated int64 reward_types = 1 [packed = true];
 }
 
 message ClaimQQVipRewardsReply {
-    repeated corepb.Item items = 1;  // 奖励物品列表
+    repeated corepb.Item items = 1;     // 1.13.x 字段号（本地在用），保留
+    repeated corepb.Item items_v2 = 3;  // 官方 1.14.2.11 字段号
 }
 
 // ==== appended from upstream 1.14.2.11_20260922 ====

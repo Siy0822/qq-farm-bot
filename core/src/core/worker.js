@@ -929,6 +929,16 @@ async function handleApiCall(msg) {
                 result = await getMallGoodsList(0);
                 break;
             }
+            case 'getSvipCatalog': {
+                const { getSvipCatalog } = require('../services/svip-mall');
+                result = await getSvipCatalog();
+                break;
+            }
+            case 'purchaseSvipGoods': {
+                const { purchaseSvipGoods } = require('../services/svip-mall');
+                result = await purchaseSvipGoods(args[0], args[1], args[2]);
+                break;
+            }
             case 'buyMallGoods': {
                 const { purchaseMallGoods } = require('../services/mall');
                 result = await purchaseMallGoods(args[0], args[1]);

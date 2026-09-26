@@ -13,6 +13,7 @@ import SeedGoodsCard from '@/components/shop/SeedGoodsCard.vue'
 import ShopAccountHeader from '@/components/shop/ShopAccountHeader.vue'
 import ShopEmptyState from '@/components/shop/ShopEmptyState.vue'
 import ShopTabToolbar from '@/components/shop/ShopTabToolbar.vue'
+import SvipGoodsCard from '@/components/shop/SvipGoodsCard.vue'
 import { createShopAvailability } from '@/composables/shop/useShopAvailability'
 import { useAccountStore } from '@/stores/account'
 import { useShopStore } from '@/stores/shop'
@@ -33,24 +34,27 @@ const {
   pets,
   decorations,
   mallGoods,
+  svipCatalog,
   mysteryOffer,
   loading,
   petLoading,
   decorationLoading,
   mallLoading,
+  svipLoading,
   mysteryLoading,
   error,
   petError,
   decorationError,
   mallError,
+  svipError,
   mysteryError,
   userGoldBean,
 } = storeToRefs(shopStore)
 
-const tab = ref<'seed' | 'pet' | 'decoration' | 'mall' | 'mystery'>('seed')
+const tab = ref<'seed' | 'pet' | 'decoration' | 'mall' | 'svip' | 'mystery'>('seed')
 const ascending = ref(true)
 const FERTILIZER_MALL_GOODS_IDS = new Set([1002, 1003])
-const SHOP_TABS = new Set(['seed', 'pet', 'decoration', 'mall', 'mystery'])
+const SHOP_TABS = new Set(['seed', 'pet', 'decoration', 'mall', 'svip', 'mystery'])
 
 const showConfirm = ref(false)
 const confirmTitle = ref('确认购买')
@@ -69,7 +73,7 @@ const quantityModal = ref({
 const currentLevel = computed(() => status.value?.status?.level || 0)
 const currentGold = computed(() => status.value?.status?.gold || 0)
 const currentCoupon = computed(() => status.value?.status?.coupon || 0)
-const isAnyLoading = computed(() => loading.value || petLoading.value || decorationLoading.value || mallLoading.value || mysteryLoading.value)
+const isAnyLoading = computed(() => loading.value || petLoading.value || decorationLoading.value || mallLoading.value || svipLoading.value || mysteryLoading.value)
 const mysteryBalance = computed(() => {
   if (mysteryOffer.value?.currencyId === 1002)
     return currentCoupon.value
@@ -96,6 +100,19 @@ const {
   userGoldBean: () => userGoldBean.value,
 })
 
+const svipGoods = computed(() => svipCatalog.value?.goods || [])
+const svipMembership = computed(() => svipCatalog.value?.membership || null)
+
+function getSvipHint(item: any) {
+  if (item.purchaseStatus === 'svip_required')
+    return '需要 SVIP 会员身份'
+  if (item.limit)
+    return `限购 ${item.limit.max} 件，已购 ${item.limit.bought}，剩余 ${item.limit.remaining}`
+  if (item.isFree)
+    return '每日免费，不消耗货币'
+  return '游戏内商城分页商品'
+}
+
 const sortedSeeds = computed(() => {
   return [...seeds.value].sort((a, b) => ascending.value ? a.seedLevel - b.seedLevel : b.seedLevel - a.seedLevel)
 })
@@ -109,6 +126,8 @@ const activeError = computed(() => {
     return decorationError.value
   if (tab.value === 'mall')
     return mallError.value
+  if (tab.value === 'svip')
+    return svipError.value
   return mysteryError.value
 })
 const activeIsEmpty = computed(() => {
@@ -120,6 +139,8 @@ const activeIsEmpty = computed(() => {
     return decorations.value.length === 0
   if (tab.value === 'mall')
     return mallGoods.value.length === 0
+  if (tab.value === 'svip')
+    return svipGoods.value.length === 0
   return !mysteryOffer.value?.active
 })
 const activeEmptyMessage = computed(() => {
@@ -132,6 +153,10 @@ const activeEmptyMessage = computed(() => {
       return '暂无装扮商品。'
     case 'mall':
       return '暂无道具商品。'
+    case 'svip':
+      return svipMembership.value && !svipMembership.value.isSvip
+        ? '当前账号不是 SVIP 会员，无法购买该分页商品。'
+        : '暂无 SVIP 商品。'
     case 'mystery':
       return '神秘商人暂未出现，请稍后刷新看看。'
   }
@@ -209,6 +234,36 @@ async function buyMallGoods(item: any, quantity = 1) {
   else {
     toast.error(result?.error || '购买失败')
   }
+}
+
+async function buySvipGoods(item: any) {
+  if (!currentAccountId.value)
+    return
+  const expectedPrice = item.price ? { id: Number(item.price.id), count: Number(item.price.count) } : undefined
+  const result = await shopStore.buySvipGoods(currentAccountId.value, item.id, 1, expectedPrice)
+  if (result?.ok) {
+    toast.success(`已购买 ${item.name}`)
+    await shopStore.fetchSvipMall(currentAccountId.value)
+  }
+  else {
+    toast.error(result?.error || '购买失败')
+  }
+}
+
+function confirmBuySvipGoods(item: any) {
+  if (!item.purchasable) {
+    toast.error(item.unavailableReason || '商品当前不可购买')
+    return
+  }
+  const priceText = item.isFree
+    ? '免费'
+    : `${item.price?.count ?? 0} ${item.price?.name || ''}`.trim()
+  openConfirm(
+    '确认购买 SVIP 商品',
+    `确定购买 ${item.name} 吗？
+价格：${priceText}`,
+    () => buySvipGoods(item),
+  )
 }
 
 async function buyMysteryGoods(item: any) {
@@ -441,6 +496,28 @@ onMounted(() => {
             :status-label="getMallStatusLabel(item)"
             :hint="getMallHint(item)"
             @buy="confirmBuyMallGoods"
+          />
+        </div>
+      </div>
+
+      <div v-else-if="tab === 'svip'" class="space-y-4">
+        <div v-if="svipError" class="rounded-xl glass-error px-4 py-3 text-sm">
+          {{ svipError }}
+        </div>
+        <div
+          v-if="svipMembership && !svipMembership.isSvip"
+          class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-100"
+        >
+          当前账号不是 SVIP 会员，可以浏览但无法购买。
+        </div>
+        <ShopEmptyState v-if="!svipGoods.length" :message="activeEmptyMessage" />
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(156px,1fr))] gap-3">
+          <SvipGoodsCard
+            v-for="item in svipGoods"
+            :key="item.id"
+            :item="item"
+            :hint="getSvipHint(item)"
+            @buy="confirmBuySvipGoods"
           />
         </div>
       </div>

@@ -5,6 +5,7 @@ const { registerAdminDecorationShopRoutes } = require("./admin-decoration-shop-r
   const { registerAdminSeedShopRoutes } = require("./admin-seed-shop-routes");
   const { registerAdminShopDebugRoutes } = require("./admin-shop-debug-routes");
   const { registerAdminShopPurchaseRoutes } = require("./admin-shop-purchase-routes");
+  const { registerAdminSvipMallRoutes } = require("./admin-svip-mall-routes");
 
 function registerAdminShopRoutes(context) {
   registerAdminMallRoutes(context);
@@ -14,6 +15,7 @@ function registerAdminShopRoutes(context) {
   registerAdminShopDebugRoutes(context);
   registerAdminDecorationShopRoutes(context);
   registerAdminShopPurchaseRoutes(context);
+  registerAdminSvipMallRoutes(context);
 }
 
 module.exports = { registerAdminShopRoutes };

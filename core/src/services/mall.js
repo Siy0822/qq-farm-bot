@@ -72,6 +72,56 @@ async function purchaseMallGoods(goodsId, count = 1) {
   return types.PurchaseResponse.decode(body);
 }
 
+// ---- SVIP 分页（官方 1.14.2.11）----
+// 本模块的 MallGoods/PurchaseResponse 是旧版结构（price/limit 为裸 bytes），
+// 官方 slot 4 的 goods_list 必须用 MallGoodsV2（corepb.Item price + PurchaseLimit）解码。
+// 因此这里单列一套 V2 调用，不改动上面在跑的化肥购买链路。
+
+/**
+ * 取指定分页的商品列表（官方结构）
+ * @param {number} slotType 1=普通商城，4=SVIP 分页
+ * @param {boolean} isManualOpen 官方 field 2
+ */
+async function getMallGoodsListV2(slotType = 1, isManualOpen = false) {
+  const request = types.GetMallListBySlotTypeRequest.encode(
+    types.GetMallListBySlotTypeRequest.create({
+      slot_type: Number(slotType) || 1,
+      is_manual_open: isManualOpen === true,
+    })
+  ).finish();
+  const { body } = await sendMsgAsync('gamepb.mallpb.MallService', 'GetMallListBySlotType', request);
+  const reply = types.GetMallListBySlotTypeResponse.decode(body);
+  const rawList = Array.isArray(reply && reply.goods_list) ? reply.goods_list : [];
+  const goods = [];
+  for (const raw of rawList) {
+    try {
+      goods.push(types.MallGoodsV2.decode(raw));
+    } catch {
+      // 跳过解码失败的
+    }
+  }
+  return {
+    goods,
+    refreshCountdown: Math.max(0, toNum(reply && reply.refresh_countdown)),
+  };
+}
+
+/**
+ * 官方结构购买。field 2 是 success，不是购买数量。
+ */
+async function purchaseMallGoodsV2(goodsId, count = 1) {
+  const request = types.PurchaseRequest.encode(
+    types.PurchaseRequest.create({
+      goods_id: Number(goodsId) || 0,
+      count: Number(count) || 1,
+    })
+  ).finish();
+  const { body } = await sendMsgAsync('gamepb.mallpb.MallService', 'Purchase', request);
+  const reply = types.PurchaseResponseV2.decode(body);
+  if (reply.success !== true) throw new Error('商城未确认购买成功，请刷新核对');
+  return reply;
+}
+
 /**
  * 获取指定槽位的商品列表
  */
@@ -590,7 +640,9 @@ module.exports = {
   checkAndBuyFertilizerBoth,
   buyFreeGifts,
   getMallGoodsList,
+  getMallGoodsListV2,
   purchaseMallGoods,
+  purchaseMallGoodsV2,
   parseMallPriceValue,
   parseMallLimitInfo,
   parseMallItemIds,

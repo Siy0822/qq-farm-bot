@@ -15,6 +15,8 @@ service MallService {
 // 获取商场列表请求
 message GetMallListBySlotTypeRequest {
   int32 slot_type = 1;  // 商场类型
+  // 官方 1.14.2.11 起 field 2 是 is_manual_open（主动打开标记），不是子分类。
+  bool is_manual_open = 2;
 }
 
 // 获取商场列表响应
@@ -92,4 +94,43 @@ message ProductsHasChangedNotify {
 
 message NeedNotify {
   int32 need_type = 1;
+}
+
+// ==== SVIP 分页专用（官方 1.14.2.11）====
+// 本地 MallGoods 的 price/limit 是裸 bytes + 手工 varint 解析，与官方 corepb.Item/PurchaseLimit
+// 结构不同；官方 slot1 回包用本地 MallGoods 解码会在第 2 条开始崩（invalid wire type），
+// 本地面板目前靠 MALL_GOODS_PRICE_OVERRIDES 常量兜着。
+// 因此这里新增并列类型，只供 SVIP 分页解析，不动在跑的化肥购买链路。
+message MallGoodsV2 {
+  int64 goods_id = 1;
+  string name = 2;
+  int32 goods_type = 3;
+  repeated corepb.Item reward_items = 4;
+  corepb.Item price = 5;
+  bool is_free = 6;
+  PurchaseLimit purchase_limit = 7;
+  bool is_available = 8;
+  string discount_text = 9;
+  bool is_discounted = 10;
+  int64 discount_end_time = 11;
+  int32 product_type = 12;
+  string pic = 13;
+  int64 discount_price = 14;
+  int64 promotion_start_time = 15;
+  int64 promotion_end_time = 16;
+  int64 ad_id = 17;
+  bool ad_only = 18;
+  MallShareInfo share = 19;
+  bool is_owned = 20;
+}
+
+// 官方 PurchaseResponse：field 2 是 success（不是购买数量）。
+message PurchaseResponseV2 {
+  int64 goods_id = 1;
+  bool success = 2;
+  repeated corepb.Item reward_items = 3;
+  bool is_first_buy = 4;
+  PurchaseLimit purchase_limit = 5;
+  bool share_free = 6;
+  MallShareInfo share = 7;
 }
