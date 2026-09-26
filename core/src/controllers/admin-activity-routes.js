@@ -13,6 +13,7 @@ const {
 const { registerAdminYuluActivityRoutes } = require('./admin-yulu-activity-routes');
 const { registerAdminHonghuaActivityRoutes } = require('./admin-honghua-activity-routes');
 const { registerAdminAutumnActivityRoutes } = require('./admin-autumn-activity-routes');
+const { registerAdminPetDiaryRoutes } = require('./admin-pet-diary-activity-routes');
 
 function registerAdminActivityRoutes({
   app,
@@ -36,6 +37,7 @@ function registerAdminActivityRoutes({
   registerAdminYuluActivityRoutes(routeContext);
   registerAdminHonghuaActivityRoutes(routeContext);
   registerAdminAutumnActivityRoutes(routeContext);
+  registerAdminPetDiaryRoutes(routeContext);
 }
 
 module.exports = { registerAdminActivityRoutes };

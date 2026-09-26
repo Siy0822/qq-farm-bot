@@ -200,6 +200,10 @@ async function loadProto() {
     // 秋日活动（官方 1.14.2.11）：请求/回包与旧版 OperateRequest/OperateReply 不同字段号，单独注册
     types.AutumnOperateRequest = root.lookupType('gamepb.activitypb.AutumnOperateRequest');
     types.AutumnOperateReply = root.lookupType('gamepb.activitypb.ActivityOperateReply');
+    // 萌宠日记（官方 1.14.x）：pet-diary.proto 在 P0 已落地，这里按上游方式注册三个入口类型
+    types.PetDiaryOperateRequest = root.lookupType('gamepb.activitypb.PetDiaryOperateRequest');
+    types.PetDiaryOperateReply = root.lookupType('gamepb.activitypb.PetDiaryOperateReply');
+    types.PetDiaryGetGroupReply = root.lookupType('gamepb.activitypb.PetDiaryGetGroupReply');
 
     // 好友
     types.GetAllFriendsRequest = root.lookupType('gamepb.friendpb.GetAllRequest');

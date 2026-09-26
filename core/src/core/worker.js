@@ -1038,6 +1038,22 @@ async function handleApiCall(msg) {
                 result = await require('../services/autumn').operateAutumnActivity(args[0], args[1], args[2]);
                 break;
             }
+            case 'getPetDiary': {
+                result = await require('../services/pet-diary').getPetDiary();
+                break;
+            }
+            case 'operatePetDiary': {
+                result = await require('../services/pet-diary').operatePetDiary(args[0], args[1]);
+                break;
+            }
+            case 'getPetDiaryRecords': {
+                result = await require('../services/pet-diary').getPetDiaryRecords(args[0]);
+                break;
+            }
+            case 'getPetDiaryFriend': {
+                result = await require('../services/pet-diary').getPetDiaryFriend(args[0]);
+                break;
+            }
             case 'getHonghuaActivity': {
                 result = await require('../services/honghua').getHonghuaActivity();
                 break;
