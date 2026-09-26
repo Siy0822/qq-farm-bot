@@ -1019,6 +1019,14 @@ async function handleApiCall(msg) {
                 result = await require('../services/yulu').exchangeYulu();
                 break;
             }
+            case 'getAutumnActivity': {
+                result = await require('../services/autumn').getAutumnActivity(args[0]);
+                break;
+            }
+            case 'operateAutumnActivity': {
+                result = await require('../services/autumn').operateAutumnActivity(args[0], args[1], args[2]);
+                break;
+            }
             case 'getHonghuaActivity': {
                 result = await require('../services/honghua').getHonghuaActivity();
                 break;

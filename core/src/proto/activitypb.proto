@@ -178,6 +178,9 @@ message ActivityNode {
     RandomShopInfo random_shop = 101;
     ExchangeShopInfo exchange_shop = 102;
     DrawInfo draw_info = 105;
+    // 秋日活动（官方 1.14.2.11）：与上游 ActivityData 同字段号，供 GetGroup 直接解码
+    ActivityBodyWishSign wish_sign = 119;
+    ActivityBodyShareReward share_reward = 120;
 }
 
 message ListReply {

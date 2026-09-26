@@ -192,6 +192,8 @@ function createDataProvider(deps) {
         researchYulu: (ref, nodeId) => callWorkerApi(resolveAccountId(ref), 'researchYulu', nodeId),
         exchangeYulu: (ref) => callWorkerApi(resolveAccountId(ref), 'exchangeYulu'),
         getHonghuaActivity: (ref) => callWorkerApi(resolveAccountId(ref), 'getHonghuaActivity'),
+        getAutumnActivity: (ref, key) => callWorkerApi(resolveAccountId(ref), 'getAutumnActivity', key),
+        operateAutumnActivity: (ref, key, action, input) => callWorkerApi(resolveAccountId(ref), 'operateAutumnActivity', key, action, input),
         sendHonghuaLove: (ref) => callWorkerApi(resolveAccountId(ref), 'sendHonghuaLove'),
         sendHonghuaFund: (ref) => callWorkerApi(resolveAccountId(ref), 'sendHonghuaFund'),
         claimHonghuaReward: (ref, kind, tier) => callWorkerApi(resolveAccountId(ref), 'claimHonghuaReward', kind, tier),

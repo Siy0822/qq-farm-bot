@@ -11,6 +11,7 @@ import HeluSolarTermsPanel from '@/components/activity/HeluSolarTermsPanel.vue'
 import QixiActivityPanel from '@/components/activity/QixiActivityPanel.vue'
 import YuluActivityPanel from '@/components/activity/YuluActivityPanel.vue'
 import HonghuaActivityPanel from '@/components/activity/HonghuaActivityPanel.vue'
+import AutumnActivityPanel from '@/components/activity/AutumnActivityPanel.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityStore } from '@/stores/activity'
@@ -104,6 +105,8 @@ const {
 
 // 上游活动占位入口：只展示已确认的前端信息，不调用未抓包的后端协议。
 const seasonalActivityTabs = computed<ActivitySection[]>(() => [
+  { key: 'autumnWish', label: '秋祈良愿', icon: '🍁' },
+  { key: 'autumnHappy', label: '快乐不独享', icon: '🎉' },
   { key: 'yulu', label: '雨落成诗', icon: '🌧️' },
   { key: 'honghua', label: '公益小红花', icon: '🌸' },
 ])
@@ -517,6 +520,10 @@ onMounted(() => {
           @gift="giftQixiSachet"
           @load-friends="loadQixiFriends"
         />
+
+        <AutumnActivityPanel v-else-if="activeSection === 'autumnWish'" kind="wish" />
+
+        <AutumnActivityPanel v-else-if="activeSection === 'autumnHappy'" kind="happy" />
 
         <YuluActivityPanel v-else-if="activeSection === 'yulu'" />
 

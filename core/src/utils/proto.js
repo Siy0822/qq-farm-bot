@@ -190,6 +190,9 @@ async function loadProto() {
     types.ActivityActivityInfo = root.lookupType('gamepb.activitypb.ActivityInfo');
     types.ActivityListRequest = root.lookupType('gamepb.activitypb.ListRequest');
     types.ActivityListReply = root.lookupType('gamepb.activitypb.ListReply');
+    // 秋日活动（官方 1.14.2.11）：请求/回包与旧版 OperateRequest/OperateReply 不同字段号，单独注册
+    types.AutumnOperateRequest = root.lookupType('gamepb.activitypb.AutumnOperateRequest');
+    types.AutumnOperateReply = root.lookupType('gamepb.activitypb.ActivityOperateReply');
 
     // 好友
     types.GetAllFriendsRequest = root.lookupType('gamepb.friendpb.GetAllRequest');
