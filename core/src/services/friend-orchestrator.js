@@ -19,6 +19,7 @@ const {
 } = require('./farm');
 const { stopFertilizerBuyCheckTimer, startFertilizerBuyCheckTimer } = require('./farm-scheduler');
 const { stopMysteryAutoBuyTimer, startMysteryAutoBuyTimer } = require('./mystery-scheduler');
+const { runExclusiveAutomationTask } = require('./automation-lock');
 const { createScheduler } = require('./scheduler');
 const {
   getAllFriends,
@@ -748,7 +749,7 @@ async function friendCheckLoop() {
 
   await bootstrapFriendDogInfoCacheIfNeeded();
 
-  await checkFriends();
+  await runExclusiveAutomationTask('friend_check_loop', checkFriends);
 
   if (!friendLoopRunning) return;
 
@@ -791,7 +792,7 @@ function startFriendCheckLoop(opts = {}) {
   friendScheduler.setTimeoutTask(
     'friend_check_bootstrap_applications',
     30 * 1000,
-    () => checkAndAcceptApplications()
+    () => runExclusiveAutomationTask('friend_applications_bootstrap', checkAndAcceptApplications).catch(() => null)
   );
 }
 

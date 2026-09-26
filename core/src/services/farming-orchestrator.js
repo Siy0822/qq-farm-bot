@@ -10,6 +10,7 @@ const { runFertilizerByConfig } = require('./farm-fertilizer');
 const { autoPlantEmptyLands } = require('./planting-service');
 const { startFertilizerBuyCheckTimer, stopFertilizerBuyCheckTimer } = require('./farm-scheduler');
 const { startMysteryAutoBuyTimer, stopMysteryAutoBuyTimer } = require('./mystery-scheduler');
+const { runExclusiveAutomationTask } = require('./automation-lock');
 
 // ─── 状态标记 ───
 
@@ -270,7 +271,7 @@ function scheduleNextFarmCheck(intervalMs = CONFIG.farmCheckInterval) {
   if (!farmLoopRunning) return;
   farmScheduler.setTimeoutTask('farm_check_loop', Math.max(0, intervalMs), async () => {
     if (!farmLoopRunning) return;
-    await checkFarm();
+    await runExclusiveAutomationTask('farm_check_loop', checkFarm);
     if (!farmLoopRunning) return;
     scheduleNextFarmCheck(CONFIG.farmCheckInterval);
   });
@@ -299,7 +300,7 @@ function onLandsChangedPush(lands) {
     module: 'farm', event: '土地推送通知', result: 'trigger_check', count: lands.length
   });
   farmScheduler.setTimeoutTask('farm_push_check', 1000, async () => {
-    if (!isCheckingFarm) await checkFarm();
+    if (!isCheckingFarm) await runExclusiveAutomationTask('farm_push_check', checkFarm);
   });
 }
 

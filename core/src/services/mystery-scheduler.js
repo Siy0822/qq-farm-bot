@@ -4,6 +4,7 @@ const {
   getMysteryAutoBuyCurrencies
 } = require('../models/store');
 const { getActiveMysteryShop, buyMysteryShopGoods } = require('./mystery-shop');
+const { runExclusiveAutomationTask } = require('./automation-lock');
 
 const MYSTERY_AUTO_BUY_INTERVAL_MS = 60 * 60 * 1000;
 const MYSTERY_AUTO_BUY_MAX_PER_CYCLE = 20;
@@ -15,10 +16,10 @@ function startMysteryAutoBuyTimer() {
   if (!isMysteryAutoBuyOn()) return;
 
   // 启动时立即执行一次（单次查询+购买，不循环避免队列卡死）
-  runOnce();
+  runExclusiveAutomationTask('mystery_shop_initial', runOnce).catch(() => null);
 
   mysteryAutoBuyTimer = setInterval(() => {
-    checkMysteryAutoBuyOnce();
+    runExclusiveAutomationTask('mystery_shop_check', checkMysteryAutoBuyOnce).catch(() => null);
   }, MYSTERY_AUTO_BUY_INTERVAL_MS);
 
   log('神秘商人', `自动购买定时器已启动，间隔 ${MYSTERY_AUTO_BUY_INTERVAL_MS / 1000} 秒`, {

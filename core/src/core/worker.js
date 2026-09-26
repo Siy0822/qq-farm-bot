@@ -26,6 +26,7 @@ const {
     fertilize,
     removePlant
 } = require('../services/farm');
+const { runExclusiveAutomationTask } = require('../services/automation-lock');
 const {
     checkFriends,
     startFriendCheckLoop,
@@ -225,7 +226,7 @@ function stopDailyRoutineTimer() {
 function startDailyRoutineTimer() {
     stopDailyRoutineTimer();
     lastDailyRunDate = getLocalDateKey();
-    runDailyRoutines(true).catch(() => null);
+    runExclusiveAutomationTask('daily_routines', () => runDailyRoutines(true)).catch(() => null);
 
     // 每 60 秒检查一次日期是否变化
     workerScheduler.setIntervalTask('daily_routine_interval', 60000, () => {
@@ -233,7 +234,7 @@ function startDailyRoutineTimer() {
         const today = getLocalDateKey();
         if (today === lastDailyRunDate) return;
         lastDailyRunDate = today;
-        runDailyRoutines(true)
+        runExclusiveAutomationTask('daily_routines', () => runDailyRoutines(true))
             .then(() => runBadOnceOnStartup(true))
             .catch(() => null);
     });
@@ -395,9 +396,9 @@ async function runUnifiedTick() {
     if (!shouldFarm && !shouldHelp && !shouldSteal) return;
 
     const autoConfig = getAutomation();
-    if (shouldFarm) await runFarmTick(autoConfig);
-    if (shouldHelp) await runHelpTick(autoConfig);
-    if (shouldSteal) await runStealTick(autoConfig);
+    if (shouldFarm) await runExclusiveAutomationTask('farm_tick', () => runFarmTick(autoConfig));
+    if (shouldHelp) await runExclusiveAutomationTask('friend_tick', () => runHelpTick(autoConfig));
+    if (shouldSteal) await runExclusiveAutomationTask('friend_tick', () => runStealTick(autoConfig));
 }
 
 function scheduleUnifiedNextTick() {
@@ -491,7 +492,7 @@ function applyRuntimeConfig(config, syncStatusAfter = false) {
             const newDailyEnabled = isDailyRoutineEnabled(newAuto);
             if (!prevDailyEnabled && newDailyEnabled) {
                 workerScheduler.setTimeoutTask('daily_routine_immediate', 2000, () => {
-                    runDailyRoutines(true).catch(() => null);
+                    runExclusiveAutomationTask('daily_routines', () => runDailyRoutines(true)).catch(() => null);
                 });
             }
 
