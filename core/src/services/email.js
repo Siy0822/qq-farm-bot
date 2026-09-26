@@ -135,11 +135,9 @@ async function checkAndClaimEmails(force = false) {
   lastCheckAt = now;
 
   try {
-    // 同时获取两种邮箱类型的列表
-    const [boxType1Reply, boxType2Reply] = await Promise.all([
-      getEmailList(1).catch(() => ({ emails: [] })),
-      getEmailList(2).catch(() => ({ emails: [] })),
-    ]);
+    // 两个列表串行发现：登录启动期不要叠加 GetEmailList（上游 304dcdf）
+    const boxType1Reply = await getEmailList(1).catch(() => ({ emails: [] }));
+    const boxType2Reply = await getEmailList(2).catch(() => ({ emails: [] }));
 
     // 合并去重邮件
     const merged = new Map();
