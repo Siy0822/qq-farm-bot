@@ -75,6 +75,14 @@ services:
       - NAPCAT_BASE_URL=http://127.0.0.1:3001
       - NAPCAT_WEBUI_BASE_URL=http://127.0.0.1:6099
       - NAPCAT_TIMEOUT_MS=8000
+    ulimits:
+      # 【2026-09-16】禁止容器内进程写 core dump。
+      # napcat 里 QQ 客户端被 SIGTRAP(int3) 打死时，core_pattern=core 会把它
+      # 写到进程 cwd（launcher 里 cd 到 /opt/napcat-shell），单个约 860MB；
+      # 8/26–9/16 累积 394 个 = 25G，加上构建缓存曾把 / 顶到 99%（仅剩 1.9G）。
+      # Docker 默认给容器 RLIMIT_CORE=unlimited（宿主 ulimit -c 是 0 也没用），
+      # 必须在这里显式清零；core_pattern 是全局的，不动它。
+      core: 0
     logging:
       driver: "json-file"
       options:
