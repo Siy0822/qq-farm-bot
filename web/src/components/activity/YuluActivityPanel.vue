@@ -15,7 +15,12 @@ const load = async () => {
 }
 const run = async (name: string, url: string, body: any = {}) => {
   action.value = name; error.value = ''
-  try { await api.post(url, body); await load() }
+  try {
+    const response = await api.post(url, body)
+    if (response.data?.ok === false)
+      throw new Error(response.data?.error || response.data?.message || `${name}失败`)
+    await load()
+  }
   catch (e: any) { error.value = e?.response?.data?.error || e?.message || `${name}失败` }
   finally { action.value = '' }
 }
