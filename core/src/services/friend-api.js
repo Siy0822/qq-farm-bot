@@ -18,12 +18,20 @@ const QQ_FRIEND_LIST_BATCH_SIZE = 35;
 const INVALID_KNOWN_FRIEND_GID_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // ===== Dog names mapping =====
+// 未收录的犬 ID 会被 getDogName 显式暴露为「未知犬#ID」，并触发「狗信息解析异常」warn，
+// 用于发现服务端新增/改版的犬只，提醒及时补表。
 const DOG_NAMES = {
   '90001': '田园犬',
   '90002': '牧羊犬',
   '90003': '斑点狗',
   '90011': '柯基',
   '90021': '护主犬',
+  // 【2026-09-28】萌宠活动新增比熊犬系列。服务端会把形态/时装 ID 直接当 dog_id 下发，
+  // 实测 gid=1020918583 raw=08afbf0510b5ba1e → dog_id=90031、
+  //      gid=1004527592 raw=08afbf0510b38c761a0608babf051801 → dog_id=90042。
+  '90031': '比熊犬',
+  '90041': '比熊幼崽',
+  '90042': '稚萌熊熊',
 };
 
 // ===== State =====
