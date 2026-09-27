@@ -1,23 +1,12 @@
 <script setup lang="ts">
 import type { ActivityLabels, ActivitySection, ActivitySectionKey } from '@/components/activity/types'
-import type { ActivityExchangeShopItem } from '@/stores/activity'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
-import ActivitySubActivityPanel from '@/components/activity/ActivitySubActivityPanel.vue'
-import GuanxingActivityPanel from '@/components/activity/GuanxingActivityPanel.vue'
-import HeluExchangePanel from '@/components/activity/HeluExchangePanel.vue'
-import HeluPassportPanel from '@/components/activity/HeluPassportPanel.vue'
-import HeluSolarTermsPanel from '@/components/activity/HeluSolarTermsPanel.vue'
-import QixiActivityPanel from '@/components/activity/QixiActivityPanel.vue'
-import YuluActivityPanel from '@/components/activity/YuluActivityPanel.vue'
-import HonghuaActivityPanel from '@/components/activity/HonghuaActivityPanel.vue'
 import AutumnActivityPanel from '@/components/activity/AutumnActivityPanel.vue'
 import PetDiaryActivityPanel from '@/components/activity/PetDiaryActivityPanel.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityStore } from '@/stores/activity'
-import { useFriendStore } from '@/stores/friend'
-import { useToastStore } from '@/stores/toast'
 
 const L: ActivityLabels = {
   title: '\u6D3B\u52A8\u4E2D\u5FC3',
@@ -25,149 +14,31 @@ const L: ActivityLabels = {
   none: '\u672A\u9009\u62E9',
   needAccount: '\u8BF7\u5148\u9009\u62E9\u8D26\u53F7\uFF0C\u518D\u67E5\u770B\u6D3B\u52A8\u6570\u636E\u3002',
   refresh: '\u5237\u65B0',
-  loading: '\u6B63\u5728\u52A0\u8F7D\u6D3B\u52A8\u6570\u636E...',
-  empty: '\u6682\u65E0\u6570\u636E',
-  warningTitle: '\u6D3B\u52A8\u63D0\u793A',
-  heluTitle: '\u8377\u9732\u6D3B\u52A8',
-  giftLotusTab: '千星游记',
-  shopTab: '星纱商店',
-  journeyTab: '观星礼录',
-  notesTab: '\u8282\u4EE4\u5C0F\u672D',
-  pool: '\u5956\u6C60',
-  recent: '\u6700\u8FD1\u7ED3\u679C',
-  rewardPoolCount: '\u5956\u6C60\u6570',
-  freeRemain: '\u514D\u8D39\u5269\u4F59',
-  paidRemain: '\u70B9\u5238\u5269\u4F59',
-  dailyUsed: '\u4ECA\u65E5\u5DF2\u62BD',
-  dailyRemain: '\u4ECA\u65E5\u5269\u4F59',
-  helu: '星纱',
-  heluBalance: '星纱余额',
-  exchangeGoods: '\u5151\u6362\u5956\u52B1',
-  drawOne: '\u62BD 1 \u6B21',
-  drawBatch: '\u62BD\u591A\u6B21',
-  drawDone: '\u62BD\u5956\u5B8C\u6210',
-  batchDone: '\u6279\u91CF\u62BD\u5956\u5B8C\u6210',
-  drawFail: '\u62BD\u5956\u5931\u8D25',
-  exchangeDone: '\u5151\u6362\u6210\u529F\uFF1A',
-  exchangeFail: '\u5151\u6362\u5931\u8D25',
-  canExchange: '\u7ACB\u5373\u5151\u6362',
-  unavailable: '\u6682\u4E0D\u53EF\u7528',
-  owned: '\u5DF2\u62E5\u6709',
-  noHelu: '\u4F59\u989D\u4E0D\u8DB3',
-  unsupportedCurrency: '\u6682\u4E0D\u652F\u6301\u8BE5\u8D27\u5E01',
-  priceLabel: '\u4EF7\u683C',
-  stateLabel: '\u72B6\u6001',
-  drawCostLabel: '\u62BD\u5956\u8BF4\u660E',
-  freeDraw: '\u4F18\u5148\u6D88\u8017\u514D\u8D39\u6B21\u6570',
-  paidDraw: '\u6BCF\u6B21\u6D88\u8017',
-  recentCost: '\u672C\u6B21\u6D88\u8017',
-  exchangeCount: '\u5151\u6362\u5956\u52B1',
-  typeFallback: '\u6D3B\u52A8\u5956\u52B1',
-  gold: '\u91D1\u5E01',
-  coupon: '\u70B9\u5238',
-  activityCurrency: '\u6D3B\u52A8\u8D27\u5E01',
-  defaultHeluTitle: '\u8377\u98CE\u5341\u91CC\u83B2\u521D\u7EFD',
-  decorationLabel: '\u88C5\u626E',
-  subActivityUnavailable: '\u6682\u672A\u4ECE\u6D3B\u52A8\u6570\u636E\u4E2D\u8BFB\u5230\u8BE5\u5B50\u6D3B\u52A8\u8282\u70B9\u3002',
-  activityStatus: '\u6D3B\u52A8\u72B6\u6001',
 } as const
 
-// 鹊桥寄情（七夕，2026-08-18 ~ 08-22）
-// 【2026-08-23】活动已结束，隐藏入口（后端代码保留）。
-// 七夕为年度活动，明年同期把此处改回 true 即可恢复，无需重写协议实现。
-const SHOW_QIXI_ACTIVITY = false
-// 荷风活动已于 2026-07 结束，隐藏入口（后端代码保留）
-const HELU_EXPIRED = false
+// 已结束活动的入口与面板均已下线（2026-09-27）：
+// 千星游记/千星同明（观星礼录，7-29 ~ 8-27）、雨落成诗（8-26 ~ 9-08）、
+// 公益小红花（9-01 ~ 9-09）、鹊桥寄情（七夕，8-18 ~ 8-22，此前已隐藏）。
+// 后端 service / 路由 / proto / activity-data 全部保留，活动回归时重新挂回页签即可。
 
 const accountStore = useAccountStore()
 const activityStore = useActivityStore()
-const friendStore = useFriendStore()
-const toast = useToastStore()
 
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
-const {
-  heluActivity,
-  heluLoading,
-  exchangeLoading,
-  passportClaimLoading,
-  solarClaimLoading,
-  heluError,
-  guanxingActivity,
-  guanxingLoading,
-  guanxingClaimLoading,
-  guanxingError,
-  qixiActivity,
-  qixiLoading,
-  qixiSprayLoading,
-  qixiBridgeLoading,
-  qixiGiftLoading,
-  qixiError,
-} = storeToRefs(activityStore)
 
-// 上游活动占位入口：只展示已确认的前端信息，不调用未抓包的后端协议。
+const activeSection = ref<ActivitySectionKey>('petDiary')
+// 面板自带加载逻辑，改 key 触发重新挂载即等价于刷新
+const refreshKey = ref(0)
+
 const seasonalActivityTabs = computed<ActivitySection[]>(() => [
   { key: 'petDiary', label: '萌宠日记', icon: '🐶' },
   { key: 'autumnWish', label: '秋祈良愿', icon: '🍁' },
   { key: 'autumnHappy', label: '快乐不独享', icon: '🎉' },
-  { key: 'yulu', label: '雨落成诗', icon: '🌧️' },
-  { key: 'honghua', label: '公益小红花', icon: '🌸' },
 ])
 
-// 自动领取开关：localStorage 持久化，默认开启
-const AUTO_CLAIM_KEY = 'guanxing_auto_claim'
-const autoClaim = ref(localStorage.getItem(AUTO_CLAIM_KEY) !== '0')
-let autoClaimRan = false
-watch(autoClaim, (value) => {
-  localStorage.setItem(AUTO_CLAIM_KEY, value ? '1' : '0')
-})
+const sectionTabs = computed<ActivitySection[]>(() => [...seasonalActivityTabs.value])
 
-const activeSection = ref<ActivitySectionKey>('giftLotus')
-
-const heluExchangeItems = computed(() => heluActivity.value?.exchangeShop || [])
-const heluBalance = computed(() => heluActivity.value?.heluBalance || 0)
-const activityWarning = computed(() => String(heluActivity.value?.warning || '').trim())
-const anyLoading = computed(() => heluLoading.value)
-const subActivities = computed(() => heluActivity.value?.subActivities || [])
-const passport = computed(() => heluActivity.value?.passport || null)
-const solarTerms = computed(() => {
-  const raw = heluActivity.value?.solarTerms
-  if (!raw) return null
-  return {
-    ...raw,
-    terms: (raw.terms || []).filter((t: any) => t.statusLabel !== '已结束')
-  }
-})
-const qixiFriends = computed(() => (friendStore.friends || []).map((item: any) => ({
-  gid: Number(item.gid || item.id || 0),
-  name: item.name || item.nick || item.nickname || '',
-})).filter((item: any) => item.gid > 0))
-const qixiFriendsLoading = computed(() => !!friendStore.loading)
-
-const sectionTabs = computed<ActivitySection[]>(() => [
-  { key: 'giftLotus', label: L.giftLotusTab, icon: 'i-carbon-star', count: passport.value?.claimableLevels || 0 },
-  { key: 'shop', label: L.shopTab, icon: 'i-carbon-store', count: heluExchangeItems.value.length },
-  { key: 'journey', label: L.journeyTab, icon: 'i-carbon-observation', count: guanxingActivity.value?.summary?.claimableCount || 0 },
-  { key: 'notes', label: L.notesTab, icon: 'i-carbon-notebook', count: solarTerms.value?.claimableCount || 0 },
-  ...(SHOW_QIXI_ACTIVITY
-    ? [{ key: 'qixi' as const, label: '鹊桥寄情', icon: 'i-carbon-favorite', count: qixiActivity.value?.claimableTierCount || 0 }]
-    : []),
-  ...seasonalActivityTabs.value,
-])
-const activeError = computed(() => heluError.value
-  || (activeSection.value === 'journey' ? guanxingError.value : '')
-  || (activeSection.value === 'qixi' ? qixiError.value : ''))
-const activeSubActivity = computed(() => {
-  return subActivities.value.find(item => item.key === activeSection.value)
-    || subActivities.value.find(item => item.key === 'giftLotus')
-    || null
-})
 const headerPills = computed(() => [
-  {
-    label: L.heluBalance,
-    value: formatNumber(heluBalance.value),
-    icon: 'i-carbon-currency',
-    class: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300',
-  },
   {
     label: L.currentAccount,
     value: currentAccount.value?.name || L.none,
@@ -182,198 +53,22 @@ function segmentedButtonClasses(active: boolean) {
     : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
 }
 
-function formatNumber(value?: number) {
-  return Number(value || 0).toLocaleString()
-}
-
-
-async function refreshAll() {
-  if (!currentAccountId.value)
-    return
-  await activityStore.fetchHeluActivity(currentAccountId.value)
-}
-
-async function refreshGuanxing() {
-  if (!currentAccountId.value)
-    return
-  await activityStore.fetchGuanxingActivity(currentAccountId.value)
-}
-
-async function claimGuanxing() {
-  if (!currentAccountId.value)
-    return
-
-  const result = await activityStore.claimGuanxingRewards(currentAccountId.value)
-  if (result?.ok) {
-    if (result.alreadyClaimed)
-      toast.success('今日观星礼录已全部领取')
-    else if (result.claimedNodes?.length)
-      toast.success(`观星礼录领取完成：${result.claimedNodes.map((node: any) => node.name).join('、')}`)
-    else
-      toast.success('观星礼录暂无可领取奖励')
-  }
-  else {
-    toast.error(result?.error || '观星礼录领取失败')
-  }
-}
-
-// 进入观星礼录页签时的自动领取：会话内仅自动执行一次（账号切换后重置）
-async function tryAutoClaimGuanxing() {
-  if (!autoClaim.value || autoClaimRan || !currentAccountId.value)
-    return
-  const result = await activityStore.claimGuanxingRewards(currentAccountId.value)
-  if (!result?.ok)
-    return
-  autoClaimRan = true
-  if (result.claimedNodes?.length)
-    toast.success(`观星礼录自动领取：${result.claimedNodes.map((node: any) => node.name).join('、')}`)
-  await activityStore.fetchGuanxingActivity(currentAccountId.value)
-}
-
-async function exchange(item: ActivityExchangeShopItem, count: number) {
-  if (!currentAccountId.value)
-    return
-
-  const result = await activityStore.exchangeHelu(currentAccountId.value, item.id, count)
-  if (result?.ok)
-    toast.success(`${L.exchangeDone}${item.name || item.itemName} x${count}`)
-  else
-    toast.error(result?.error || L.exchangeFail)
-}
-
-async function claimPassport() {
-  if (!currentAccountId.value)
-    return
-
-  const result = await activityStore.claimHeluPassport(currentAccountId.value)
-  if (result?.ok)
-    toast.success('千星游记奖励领取完成')
-  else
-    toast.error(result?.error || '千星游记领取失败')
-}
-
-async function claimSolar(term: { id: number, title?: string }) {
-  if (!currentAccountId.value)
-    return
-
-  const result = await activityStore.claimHeluSolar(currentAccountId.value, term.id)
-  if (result?.ok)
-    toast.success(`节令小札领取完成：${term.title || term.id}`)
-  else
-    toast.error(result?.error || '节令小札领取失败')
-}
-
-// ===== 鹊桥寄情（七夕） =====
-async function refreshQixi() {
-  if (!currentAccountId.value)
-    return
-  await activityStore.fetchQixiActivity(currentAccountId.value)
-}
-
-async function loadQixiFriends() {
-  if (!currentAccountId.value)
-    return
-  await friendStore.fetchFriends(currentAccountId.value)
-  if (!qixiFriends.value.length)
-    toast.error('未取到好友列表，可先到好友页同步')
-}
-
-function describeRewards(rewards?: Array<{ itemName?: string, itemCount?: number }>) {
-  return (rewards || [])
-    .filter(item => item && item.itemName)
-    .map(item => `${item.itemName} × ${item.itemCount || 1}`)
-    .join('、')
-}
-
-async function sprayQixi(payload: { hostGid: number, count: number }) {
-  if (!currentAccountId.value)
-    return
-
-  const result = await activityStore.sprayQixiLu(currentAccountId.value, payload)
-  if (result?.ok) {
-    const gain = Number(result.featherGain || 0)
-    const target = payload.hostGid > 0 ? '好友农场' : '自家农场'
-    toast.success(gain > 0
-      ? `${target}喷洒 ${result.sprayed || 0} 次，获得鹊羽 × ${gain}`
-      : `${target}喷洒 ${result.sprayed || 0} 次`)
-  }
-  else {
-    toast.error(result?.error || '鹊羽灵露喷洒失败')
-  }
-}
-
-async function buildQixiBridge() {
-  if (!currentAccountId.value)
-    return
-
-  const result = await activityStore.buildQixiBridge(currentAccountId.value, { all: true })
-  if (result?.ok) {
-    if (result.claimedTiers?.length) {
-      const rewardText = describeRewards(result.rewards)
-      const tiers = result.claimedTiers.map((item: any) => `第 ${item.tier} 档`).join('、')
-      toast.success(rewardText ? `筑桥完成（${tiers}）：${rewardText}` : `筑桥完成（${tiers}）`)
-    }
-    else if (result.alreadyClaimed) {
-      toast.success('当前档位奖励已领取')
-    }
-    else {
-      toast.success('暂无可筑建的档位')
-    }
-  }
-  else {
-    toast.error(result?.error || '筑建鹊桥失败')
-  }
-}
-
-async function giftQixiSachet(payload: { hostGid: number }) {
-  if (!currentAccountId.value)
-    return
-
-  const result = await activityStore.giftQixiSachet(currentAccountId.value, payload.hostGid)
-  if (result?.ok) {
-    const friend = qixiFriends.value.find(item => item.gid === payload.hostGid)
-    toast.success(`已送出鹊羽香囊${friend?.name ? ` → ${friend.name}` : ''}`)
-  }
-  else {
-    toast.error(result?.error || '赠送鹊羽香囊失败')
-  }
+function refreshAll() {
+  refreshKey.value += 1
 }
 
 watch(sectionTabs, (sections) => {
   if (!sections.some(section => section.key === activeSection.value))
-    activeSection.value = sections[0]?.key || 'giftLotus'
+    activeSection.value = sections[0]?.key || 'petDiary'
 }, { immediate: true })
-
-// 切到观星礼录页签时加载数据，并触发一次自动领取
-watch(activeSection, (section) => {
-  if (section === 'qixi') {
-    if (SHOW_QIXI_ACTIVITY)
-      refreshQixi()
-    return
-  }
-  if (section !== 'journey')
-    return
-  refreshGuanxing()
-  // 等星宿数据返回后判断是否有可领奖励，再自动领取
-  setTimeout(tryAutoClaimGuanxing, 800)
-})
 
 watch(currentAccountId, () => {
   activityStore.clearActivityData()
-  autoClaimRan = false
   refreshAll()
-  if (activeSection.value === 'journey')
-    refreshGuanxing()
-  if (SHOW_QIXI_ACTIVITY && activeSection.value === 'qixi')
-    refreshQixi()
 })
 
 onMounted(() => {
   refreshAll()
-  if (activeSection.value === 'journey')
-    refreshGuanxing()
-  if (SHOW_QIXI_ACTIVITY && activeSection.value === 'qixi')
-    refreshQixi()
 })
 </script>
 
@@ -419,7 +114,6 @@ onMounted(() => {
           <BaseButton
             class="w-24"
             variant="primary"
-            :loading="anyLoading"
             :disabled="!currentAccountId"
             @click="refreshAll"
           >
@@ -438,107 +132,11 @@ onMounted(() => {
     </div>
 
     <template v-else>
-      <!-- 荷风活动已过期 -->
-      <div v-if="HELU_EXPIRED" class="rounded-lg glass-subtle p-10 text-center text-sm">
-        <div class="i-carbon-calendar-mischeck mx-auto mb-3 text-3xl opacity-30" />
-        <div class="text-base font-medium">荷风活动已结束</div>
-        <div class="mt-1 text-xs" style="opacity:0.6">新活动「千星游记」上线后敬请期待</div>
-      </div>
+      <PetDiaryActivityPanel v-if="activeSection === 'petDiary'" :key="`petDiary-${refreshKey}`" />
 
-      <div v-else class="min-w-0 space-y-4">
-        <div
-          v-if="activityWarning"
-          class="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-sm dark:bg-amber-900/20 dark:text-amber-100"
-        >
-          <div class="font-semibold">
-            {{ L.warningTitle }}
-          </div>
-          <div class="mt-1">
-            {{ activityWarning }}
-          </div>
-        </div>
+      <AutumnActivityPanel v-else-if="activeSection === 'autumnWish'" :key="`wish-${refreshKey}`" kind="wish" />
 
-        <div
-          v-if="activeError"
-          class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 shadow-sm dark:bg-red-900/20 dark:text-red-300"
-        >
-          {{ activeError }}
-        </div>
-
-        <div
-          v-if="anyLoading && !activeError"
-          class="rounded-lg bg-sky-50 px-4 py-3 text-sm text-sky-900 shadow-sm dark:bg-sky-900/20 dark:text-sky-100"
-        >
-          {{ L.loading }}
-        </div>
-
-        <HeluPassportPanel
-          v-if="activeSection === 'giftLotus'"
-          :passport="passport"
-          :loading="passportClaimLoading"
-          :labels="L"
-          @claim="claimPassport"
-        />
-
-        <HeluExchangePanel
-          v-else-if="activeSection === 'shop'"
-          :items="heluExchangeItems"
-          :balance="heluBalance"
-          :exchange-loading="exchangeLoading"
-          :labels="L"
-          @exchange="exchange"
-        />
-
-        <GuanxingActivityPanel
-          v-else-if="activeSection === 'journey'"
-          :activity="guanxingActivity"
-          :loading="guanxingLoading"
-          :claim-loading="guanxingClaimLoading"
-          :auto-claim="autoClaim"
-          @claim="claimGuanxing"
-          @update:auto-claim="autoClaim = $event"
-        />
-
-        <HeluSolarTermsPanel
-          v-else-if="activeSection === 'notes'"
-          :solar-terms="solarTerms"
-          :loading="solarClaimLoading"
-          :labels="L"
-          @claim="claimSolar"
-        />
-
-        <QixiActivityPanel
-          v-else-if="SHOW_QIXI_ACTIVITY && activeSection === 'qixi'"
-          :activity="qixiActivity"
-          :loading="qixiLoading"
-          :spray-loading="qixiSprayLoading"
-          :bridge-loading="qixiBridgeLoading"
-          :gift-loading="qixiGiftLoading"
-          :friends="qixiFriends"
-          :friends-loading="qixiFriendsLoading"
-          @refresh="refreshQixi"
-          @spray="sprayQixi"
-          @bridge="buildQixiBridge"
-          @gift="giftQixiSachet"
-          @load-friends="loadQixiFriends"
-        />
-
-        <PetDiaryActivityPanel v-else-if="activeSection === 'petDiary'" />
-
-        <AutumnActivityPanel v-else-if="activeSection === 'autumnWish'" kind="wish" />
-
-        <AutumnActivityPanel v-else-if="activeSection === 'autumnHappy'" kind="happy" />
-
-        <YuluActivityPanel v-else-if="activeSection === 'yulu'" />
-
-        <HonghuaActivityPanel v-else-if="activeSection === 'honghua'" />
-
-        <ActivitySubActivityPanel
-          v-else-if="activeSubActivity"
-          :activity="activeSubActivity"
-          :labels="L"
-        />
-      </div>
+      <AutumnActivityPanel v-else-if="activeSection === 'autumnHappy'" :key="`happy-${refreshKey}`" kind="happy" />
     </template>
   </section>
 </template>
