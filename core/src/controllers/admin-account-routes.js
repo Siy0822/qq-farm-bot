@@ -281,6 +281,14 @@ function registerAdminAccountRoutes({
           // 用户来重新扫码的最常见原因，原逻辑只在 wasRunning 时重启，
           // 扫完码账号仍是停止状态，需要手动再点一次启动。
           provider.startAccount(nextAccount.id);
+        } else {
+          // 手动填码 / 应用宝扫码更新一个**已停止**的账号时同样要拉起。
+          // 移植自上游 liyangpengs/qq-farm-bot fe3989c（该提交让前端 relogin
+          // 不传 id、走后端按名字匹配）；本机不改前端传参，只把这一段
+          // 「已停止账号也要 start」的语义补齐 —— 与同仓 admin-napcat-routes.js
+          // （QQ 扫码）和 admin-capture-routes.js（抓包）已有行为对齐。
+          // 纯改备注（onlyRenaming）仍不动账号，避免误启动。
+          provider.startAccount(nextAccount.id);
         }
       }
 

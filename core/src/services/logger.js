@@ -62,6 +62,10 @@ function startLogCleanup(logDir) {
 
 // 敏感字段正则：包含 code/token/password 等关键字的键名
 const SENSITIVE_KEY_RE = /code|token|password|passwd|auth|ticket|cookie|session/i;
+// 诊断用数字状态码（disconnectCode / closeCode / statusCode 等）本身不敏感，
+// 被 SENSITIVE_KEY_RE 的 /code/i 误伤会退化成 [REDACTED]，导致掉线排查看不到真实码。
+// 移植自上游 liyangpengs/qq-farm-bot 3e834f1。
+const DIAGNOSTIC_CODE_KEY_RE = /^(?:disconnect|close|error|http|status|exit|reason)Code$/i;
 
 /** 对 URL 查询参数中的敏感值和 Bearer Token 进行脱敏 */
 function redactString(raw) {
@@ -88,7 +92,9 @@ function sanitizeMeta(meta, depth = 0) {
   }
   const result = {};
   for (const [key, value] of Object.entries(meta)) {
-    if (SENSITIVE_KEY_RE.test(String(key))) {
+    if (DIAGNOSTIC_CODE_KEY_RE.test(key) && typeof value === 'number' && Number.isSafeInteger(value)) {
+      result[key] = value;
+    } else if (SENSITIVE_KEY_RE.test(String(key))) {
       result[key] = '[REDACTED]';
     } else {
       result[key] = sanitizeMeta(value, depth + 1);

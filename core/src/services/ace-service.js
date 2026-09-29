@@ -24,6 +24,19 @@ class AceService {
         this.uploadCount = 0;
         this.lastUploadAt = 0;
         this.lastError = '';
+        // 任务级失败统计（移植自上游 c402229）：调度器里的每个 task 单独记，
+        // 便于区分「上报链路失败」与「TSDK 内部某个任务抛错」。
+        this.taskFailures = 0;
+        this.lastTaskFailureAt = 0;
+        this.lastFailedTask = '';
+    }
+
+    recordTaskFailure(task, error, label) {
+        this.taskFailures += 1;
+        this.lastTaskFailureAt = Date.now();
+        this.lastFailedTask = task;
+        this.lastError = error && error.message ? error.message : String(error);
+        this.logger('warn', `${label}：${this.lastError}`);
     }
 
     start() {
@@ -35,8 +48,7 @@ class AceService {
             try {
                 this.runtime.processReceivedData();
             } catch (error) {
-                this.lastError = error.message;
-                this.logger('warn', `ACE 数据处理失败：${error.message}`);
+                this.recordTaskFailure('process_received_data', error, 'ACE 数据处理失败');
             }
         });
         this.scheduler.setIntervalTask('heartbeat_tick', DEFAULT_HEARTBEAT_INTERVAL_MS, () => {
@@ -44,8 +56,7 @@ class AceService {
             try {
                 this.runtime.heartbeatTick();
             } catch (error) {
-                this.lastError = error.message;
-                this.logger('warn', `ACE 心跳失败：${error.message}`);
+                this.recordTaskFailure('heartbeat_tick', error, 'ACE 心跳失败');
             }
         });
         let lastSpeedCheckAt = Date.now();
@@ -84,6 +95,9 @@ class AceService {
         try {
             data = this.runtime.getDataToServer();
         } catch (error) {
+            this.taskFailures += 1;
+            this.lastTaskFailureAt = Date.now();
+            this.lastFailedTask = 'get_data_to_server';
             this.lastError = error.message;
             this.logger('warn', `ACE 获取上报数据失败：${error.message}`);
             this.schedulePoll(Math.min(MAX_BACKOFF_MS, 1000 * (2 ** Math.min(5, ++this.failures))));
@@ -141,6 +155,9 @@ class AceService {
             uploadCount: this.uploadCount,
             lastUploadAt: this.lastUploadAt,
             lastError: this.lastError,
+            taskFailures: this.taskFailures,
+            lastTaskFailureAt: this.lastTaskFailureAt,
+            lastFailedTask: this.lastFailedTask,
             runtime: this.runtime.getStatus(),
         };
     }

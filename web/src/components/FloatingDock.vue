@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useAccountStore, getPlatformLabel, getPlatformClass } from '@/stores/account'
+import { useStatusStore } from '@/stores/status'
 import { useUserStore } from '@/stores/user'
 import AccountModal from './AccountModal.vue'
 import RemarkModal from './RemarkModal.vue'
@@ -10,8 +11,10 @@ import RemarkModal from './RemarkModal.vue'
 const route = useRoute()
 const router = useRouter()
 const accountStore = useAccountStore()
+const statusStore = useStatusStore()
 const userStore = useUserStore()
 const { accounts, currentAccount } = storeToRefs(accountStore)
+const { currentStatusReady, status } = storeToRefs(statusStore)
 
 const showAccountPopup = ref(false)
 const showAccountModal = ref(false)
@@ -109,6 +112,22 @@ function openAddAccount() {
   closePopup()
 }
 
+// 当前账号掉线/停运时的一键重新登录。
+// Code 过期是账号被停的最常见原因（尤其 platform=wx），原先前端要用户自己
+// 进「管理账号」找到那条再点编辑，路径太深。移植自上游 liyangpengs/qq-farm-bot
+// 9a7674e 的 Sidebar「重新登录」按钮，落在本机真正在用的账号弹窗（FloatingDock）。
+const currentDisconnected = computed(() =>
+  !!currentAccount.value?.id && currentStatusReady.value && !status.value?.connection?.connected,
+)
+
+function openRelogin() {
+  if (!currentAccount.value?.id)
+    return
+  accountToEdit.value = currentAccount.value
+  showAccountModal.value = true
+  closePopup()
+}
+
 function openRemarkModal(acc: any) {
   accountToEdit.value = acc
   showRemarkModal.value = true
@@ -183,6 +202,13 @@ async function handleAccountSaved() {
             </div>
 
             <div class="popup-footer">
+              <button
+                v-if="currentDisconnected"
+                class="popup-action popup-action--relogin"
+                @click="openRelogin"
+              >
+                重新登录
+              </button>
               <button class="popup-action" :style="{ color: 'var(--theme-primary)' }" @click="openAddAccount">
                 添加账号
               </button>
@@ -442,6 +468,8 @@ async function handleAccountSaved() {
 .popup-action:hover { background: rgba(255,255,255,0.16); }
 .popup-action--danger { color: #e74c3c; border-color: rgba(231,76,60,0.32); }
 .popup-action--danger:hover { background: rgba(231,76,60,0.14); }
+.popup-action--relogin { color: #b45309; border-color: rgba(251,191,36,0.42); background: rgba(251,191,36,0.14); }
+.popup-action--relogin:hover { background: rgba(251,191,36,0.24); }
 
 /* Transitions */
 .popup-enter-active, .popup-leave-active { transition: opacity 0.25s ease; }
@@ -480,6 +508,7 @@ border-color: rgba(0,0,0,0.08);
 }
 html:not(.dark) .popup-action:hover { background: rgba(0,0,0,0.08); }
 html:not(.dark) .popup-action--danger { border-color: rgba(231,76,60,0.28); }
+html:not(.dark) .popup-action--relogin { color: #b45309; border-color: rgba(180,83,9,0.3); background: rgba(251,191,36,0.18); }
 html:not(.dark) .popup-action--danger:hover { background: rgba(231,76,60,0.08); }
 html:not(.dark) .popup-action--danger:hover { background: rgba(231,76,60,0.06); }
 html:not(.dark) .popup-close { background: rgba(0,0,0,0.04); color: rgba(0,0,0,0.4); }

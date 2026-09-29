@@ -48,6 +48,11 @@ const networkScheduler = createScheduler('network');
 let tsdkRuntime = null;
 let aceService = null;
 let initialGamePackInfo = '';
+// 会话保活诊断（移植自上游 liyangpengs/qq-farm-bot c402229）。
+// 只做观测：记录进入 online 的时刻与心跳收发计数，供掉线归因时区分
+// 「从没连上」「连上后发不出心跳」「心跳发了收不到回」三种形态。
+let onlineAt = 0;
+let heartbeatStats = { attempts: 0, replies: 0, failures: 0 };
 
 function logAce(level, message) {
     if (level === 'warn' || level === 'error') logWarn('ACE', message);
@@ -572,6 +577,7 @@ async function sendLogin(onLoginSuccess) {
             const reply = types.LoginReply.decode(bodyBytes);
             if (reply.basic) {
                 clearWsErrorState();
+                onlineAt = Date.now();
                 userState.gid = toNum(reply.basic.gid);
                 userState.name = reply.basic.name || '未知';
                 userState.level = toNum(reply.basic.level);
@@ -630,6 +636,7 @@ const MAX_HEARTBEAT_MISS = 5;
 
 function startHeartbeat() {
     networkScheduler.clear('heartbeat_interval');
+    heartbeatStats = { attempts: 0, replies: 0, failures: 0 };
     lastHeartbeatResponse = Date.now();
     heartbeatMissCount = 0;
 
@@ -658,7 +665,9 @@ function startHeartbeat() {
             gid: toLong(userState.gid),
             client_version: CONFIG.clientVersion,
         })).finish();
+        heartbeatStats.attempts += 1;
         sendMsgAsync('gamepb.userpb.UserService', 'Heartbeat', body, 20000, { priority: 'high' }).then(({ body: replyBody }) => {
+            heartbeatStats.replies += 1;
             lastHeartbeatResponse = Date.now();
             heartbeatMissCount = 0;
             try {
@@ -669,7 +678,9 @@ function startHeartbeat() {
                     syncServerTime(serverTimeMs);
                 }
             } catch { }
-        }).catch(() => { });
+        }).catch(() => {
+            heartbeatStats.failures += 1;
+        });
     });
 }
 
